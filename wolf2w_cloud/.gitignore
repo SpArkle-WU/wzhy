@@ -1,0 +1,123 @@
+######################################################################
+# 后端项目（Java 微服务专用） .gitignore
+# 适用：Maven / Gradle + Spring Boot 项目
+######################################################################
+
+######################################################################
+# 构建工具
+######################################################################
+# Gradle
+.gradle/
+/build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# Maven
+target/
+!.mvn/wrapper/maven-wrapper.jar
+
+# 零散编译产物
+*.class
+*.jar
+*.war
+*.ear
+*.nar
+
+# 单元测试 & 覆盖率报告
+jacoco.exec
+coverage/
+.surefire-reports/
+.failsafe-reports/
+
+# JVM 性能分析文件
+*.hprof
+*.jfr
+*.pid
+*.heapdump
+
+######################################################################
+# IDE 编辑器
+######################################################################
+### IntelliJ IDEA ###
+.idea/
+*.iws
+*.iml
+*.ipr
+
+### Eclipse / STS ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+
+### VS Code ###
+.vscode/
+
+### NetBeans ###
+nbproject/private/
+nbbuild/
+nbdist/
+.nb-gradle/
+
+### JRebel ###
+rebel.xml
+
+### SonarLint 代码检查缓存 ###
+.sonarlint/
+
+######################################################################
+# 日志与临时文件
+######################################################################
+*.log
+*.log.*
+spring.log
+logs/
+
+*.tmp
+*.bak
+*.backup
+*.swp
+*.xml.versionsBackup
+
+# 压缩归档文件
+*.zip
+*.tar.gz
+*.rar
+
+# 本地数据库文件
+*.db
+*.sqlite
+*.sqlite3
+
+######################################################################
+# 系统级缓存
+######################################################################
+# macOS 目录缩略图缓存
+.DS_Store
+
+# Windows 系统缓存
+Thumbs.db
+desktop.ini
+
+######################################################################
+# 敏感配置 & 本地环境
+######################################################################
+# 通用环境变量文件
+.env
+.env.local
+.env.*.local
+
+# Spring Boot 本地私有配置（每人环境不同，不提交公共仓库）
+application-local.yml
+application-local.properties
+bootstrap-local.yml
+bootstrap-local.properties
+config/application-local.yml
+
+# 密钥与凭证文件
+*.secret
+*.key
+*.p12
+*.jks

@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>cn.wolfcode.wolf2w</groupId>
+        <artifactId>travel-modules</artifactId>
+        <version>3.6.2</version>
+    </parent>
+
+    <artifactId>travel-modules-note</artifactId>
+
+    <properties>
+        <maven.compiler.source>17</maven.compiler.source>
+        <maven.compiler.target>17</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    </properties>
+    <dependencies>
+        <!--三件套 sentinel nacos config nacos discovery-->
+        <dependency>
+            <groupId>com.alibaba.cloud</groupId>
+            <artifactId>spring-cloud-starter-alibaba-sentinel</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.alibaba.cloud</groupId>
+            <artifactId>spring-cloud-starter-alibaba-nacos-config</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.alibaba.cloud</groupId>
+            <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
+        </dependency>
+
+        <!--数据库相关-->
+        <dependency>
+            <groupId>mysql</groupId>
+            <artifactId>mysql-connector-java</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>cn.wolfcode.wolf2w</groupId>
+            <artifactId>travel-common-datasource</artifactId>
+            <exclusions>
+                <exclusion>
+                    <groupId>com.baomidou</groupId>
+                    <artifactId>dynamic-datasource-spring-boot-starter</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
+        <!--web相关-->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+
+        <!--日志-->
+        <dependency>
+            <groupId>cn.wolfcode.wolf2w</groupId>
+            <artifactId>travel-common-log</artifactId>
+        </dependency>
+        <!--安全框架-->
+        <dependency>
+            <groupId>cn.wolfcode.wolf2w</groupId>
+            <artifactId>travel-common-security</artifactId>
+        </dependency>
+
+        <!--监控-->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
+        <!--api 依赖 要加版本号,显示依赖关系-->
+        <!--mp分页-->
+        <dependency>
+            <groupId>cn.wolfcode.wolf2w</groupId>
+            <artifactId>travel-common-mp</artifactId>
+            <version>3.6.2</version>
+        </dependency>
+        <!--Redis-->
+        <dependency>
+            <groupId>cn.wolfcode.wolf2w</groupId>
+            <artifactId>travel-common-redis</artifactId>
+            <version>3.6.2</version>
+        </dependency>
+
+
+        <!--note api-->
+        <dependency>
+            <groupId>cn.wolfcode.wolf2w</groupId>
+            <artifactId>travel-api-note</artifactId>
+            <version>3.6.2</version>
+        </dependency>
+        <!-- Destination API（Feign 调用查目的地） -->
+        <dependency>
+            <groupId>cn.wolfcode.wolf2w</groupId>
+            <artifactId>travel-api-destination</artifactId>
+            <version>3.6.2</version>
+        </dependency>
+        <!-- Member API（Feign 调用查用户） -->
+        <dependency>
+            <groupId>cn.wolfcode.wolf2w</groupId>
+            <artifactId>travel-api-member</artifactId>
+            <version>3.6.2</version>
+        </dependency>
+        <!-- Strategy API（Feign 调用查关联攻略） -->
+        <dependency>
+            <groupId>cn.wolfcode.wolf2w</groupId>
+            <artifactId>travel-api-strategy</artifactId>
+            <version>3.6.2</version>
+        </dependency>
+
+
+
+
+
+
+    </dependencies>
+</project>

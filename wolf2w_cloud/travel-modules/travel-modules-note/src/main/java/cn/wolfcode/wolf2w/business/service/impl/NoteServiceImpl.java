@@ -14,6 +14,7 @@ import cn.wolfcode.wolf2w.common.redis.service.RedisService;
 import cn.wolfcode.wolf2w.common.redis.util.RedisKeys;
 import cn.wolfcode.wolf2w.common.security.utils.SecurityUtils;
 import cn.wolfcode.wolf2w.member.api.RemoteUserInfoService;
+import cn.wolfcode.wolf2w.member.api.domain.UserInfo;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -115,7 +116,54 @@ public class NoteServiceImpl extends ServiceImpl<NoteMapper, Note> implements IN
             wrapper.orderByDesc(Note::getCreateTime);
         }
 
-        return page(page, wrapper);
+        // 使用 baseMapper.selectPage 确保分页插件正确统计 total
+        baseMapper.selectPage(page, wrapper);
+
+        // 填充作者信息（列表页展示头像与昵称）
+        fillAuthorInfo(page.getRecords());
+
+        return page;
+    }
+
+    /**
+     * 批量填充游记列表的作者信息
+     * 优先通过 Feign 调用 userInfo 服务查询，失败则用 Note 冗余字段构造 fallback UserInfo
+     */
+    private void fillAuthorInfo(List<Note> noteList) {
+        if (noteList == null || noteList.isEmpty()) {
+            return;
+        }
+        for (Note note : noteList) {
+            if (note.getAuthorId() == null) {
+                continue;
+            }
+            // 优先远程查询
+            UserInfo author = null;
+            try {
+                R<UserInfo> r = remoteUserInfoService.getOne(note.getAuthorId(), "inner");
+                if (r != null && r.getCode() == R.SUCCESS && r.getData() != null) {
+                    author = r.getData();
+                }
+            } catch (Exception ignored) {
+            }
+            // fallback：用冗余字段构造
+            if (author == null) {
+                author = new UserInfo();
+                author.setId(note.getAuthorId());
+                author.setNickname(note.getAuthorNickname() != null ? note.getAuthorNickname() : "匿名用户");
+                author.setHeadImgUrl(note.getAuthorHeadImgUrl());
+                author.setLevel(1);
+                author.setState(0);
+            }
+            note.setAuthor(author);
+            // 同步更新冗余字段（便于后续不需要 author 对象时直接使用）
+            if (note.getAuthorNickname() == null) {
+                note.setAuthorNickname(author.getNickname());
+            }
+            if (note.getAuthorHeadImgUrl() == null) {
+                note.setAuthorHeadImgUrl(author.getHeadImgUrl());
+            }
+        }
     }
 
     @Override
@@ -195,12 +243,18 @@ public class NoteServiceImpl extends ServiceImpl<NoteMapper, Note> implements IN
             return "";
         }
         switch (person) {
-            case "1": return "亲子出游";
-            case "2": return "情侣出行";
-            case "3": return "独自一人";
-            case "4": return "家庭出行";
-            case "5": return "和朋友";
-            default:  return person;
+            case "1":
+                return "亲子出游";
+            case "2":
+                return "情侣出行";
+            case "3":
+                return "独自一人";
+            case "4":
+                return "家庭出行";
+            case "5":
+                return "和朋友";
+            default:
+                return person;
         }
     }
 
@@ -293,56 +347,67 @@ public class NoteServiceImpl extends ServiceImpl<NoteMapper, Note> implements IN
 
     // ==================== Redis 计数相关 ====================
 
-    /** 浏览量 + 1 */
+    /**
+     * 浏览量 + 1
+     */
     @Override
     public Map<String, Object> viewnumIncr(Long nid) {
         return incrementCount(nid, "viewnum", 1);
     }
 
-    /** 评论数 + 1 */
+    /**
+     * 评论数 + 1
+     */
     @Override
     public Map<String, Object> replynumIncr(Long nid) {
         return incrementCount(nid, "replynum", 1);
     }
 
-    /** 收藏/取消收藏（切换状态） */
+    /**
+     * 收藏
+     */
     @Override
-    public Map<String, Object> favor(Long nid) {
+    public void favor(Long nid) {
         Long userId = SecurityUtils.getUserId();
         // 用户收藏集合 key
         String favorSetKey = RedisKeys.NOTE_FAVOR_SET.join(userId.toString());
         // 游记统计 Hash key
         String statisHashKey = RedisKeys.NOTE_STATIS_HASH.join(nid.toString());
-
         // 检查缓存是否完整，不完整则从 DB 加载（防止残缺 Hash 导致持久化时 id 为 null）
         ensureCacheComplete(nid, statisHashKey);
 
-        Boolean result;
-        if (redisService.isCacheSetContains(favorSetKey, nid)) {
-            // 已收藏 → 取消收藏
+        // 关键：先判断是否已收藏，避免重复 +1
+        Boolean favorited = redisService.isCacheSetContains(favorSetKey, nid);
+        if (Boolean.FALSE.equals(favorited)) {
+            redisService.addCacheSetValue(favorSetKey, nid);
+            redisService.incrementCacheMapValue(statisHashKey, "favornum", 1);
+        }
+        // 如果已经收藏，就什么都不做（静默幂等），不要抛异常 — 前端只判断 200
+        this.statisHashMapPersist();
+    }
+
+    // 取消收藏
+    @Override
+    public void unFavor(Long nid) {
+
+        Long userId = SecurityUtils.getUserId();
+        String favorSetKey = RedisKeys.NOTE_FAVOR_SET.join(userId.toString());
+        String statisHashKey = RedisKeys.NOTE_STATIS_HASH.join(nid.toString());
+        ensureCacheComplete(nid, statisHashKey);
+
+        Boolean favorited = redisService.isCacheSetContains(favorSetKey, nid);
+        if (Boolean.TRUE.equals(favorited)) {
             redisService.incrementCacheMapValue(statisHashKey, "favornum", -1);
             redisService.deleteCacheSetValue(favorSetKey, nid);
-            result = false;
-        } else {
-            // 未收藏 → 收藏
-            redisService.incrementCacheMapValue(statisHashKey, "favornum", 1);
-            redisService.addCacheSetValue(favorSetKey, nid);
-            result = true;
         }
-
-        Map<String, Object> cacheMap = redisService.getCacheMap(statisHashKey);
-        cacheMap.put("result", result);
-        return cacheMap;
+        // 持久化收藏结果
+        this.statisHashMapPersist();
     }
 
-    /** 查询用户是否已收藏 */
-    @Override
-    public Boolean isUserFavor(Long nid, Long uid) {
-        String key = RedisKeys.NOTE_FAVOR_SET.join(uid.toString());
-        return redisService.isCacheSetContains(key, nid);
-    }
 
-    /** 点赞（每天最多 5 次） */
+    /**
+     * 点赞（每天最多 5 次）
+     */
     @Override
     public Map<String, Object> thumbsup(Long nid) {
         Long userId = SecurityUtils.getUserId();
@@ -370,13 +435,16 @@ public class NoteServiceImpl extends ServiceImpl<NoteMapper, Note> implements IN
             ensureCacheComplete(nid, statisKey);
             redisService.incrementCacheMapValue(statisKey, "thumbsupnum", 1);
         }
-
         Map<String, Object> cacheMap = redisService.getCacheMap(statisKey);
-        cacheMap.put("result", result);
+        cacheMap.put("result", result );
+        // 持久化点赞结果,小项目直接用更直观的方法，不建议在生产环境使用，因为会阻塞主线程
+        // this.statisHashMapPersist();
         return cacheMap;
     }
 
-    /** Redis 统计数据持久化到数据库 */
+    /**
+     * Redis 统计数据持久化到数据库
+     */
     @Override
     public void statisHashMapPersist() {
         System.out.println("游记统计数据持久化到数据库");
@@ -413,8 +481,16 @@ public class NoteServiceImpl extends ServiceImpl<NoteMapper, Note> implements IN
         }
     }
 
+
     // ==================== 提取的公共方法 ====================
 
+    /**
+     * 查询用户是否已收藏
+     */
+    private Boolean isUserFavor(Long nid, Long uid) {
+        String key = RedisKeys.NOTE_FAVOR_SET.join(uid.toString());
+        return redisService.isCacheSetContains(key, nid);
+    }
     /**
      * 确保缓存完整，不完整则从 DB 加载
      * 供 favor/thumbsup 等方法在 HINCRBY 之前调用，防止残缺 Hash

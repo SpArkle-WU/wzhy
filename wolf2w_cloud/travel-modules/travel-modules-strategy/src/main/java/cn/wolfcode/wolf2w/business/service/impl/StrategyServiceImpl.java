@@ -51,6 +51,16 @@ public class StrategyServiceImpl extends ServiceImpl<StrategyMapper, Strategy> i
     @Autowired
     private RedisService redisService;
 
+    // 排序字段 前端参数名 -> 数据库列名 的映射（白名单，防 SQL 注入）
+    // 注意：.last() 拼的是原生 SQL，不会自动做驼峰→下划线转换，所以 createTime 要映射成 create_time
+    private static final Map<String, String> ORDER_BY_COLUMN_MAP = new HashMap<String, String>() {{
+        put("viewnum", "viewnum");
+        put("thumbsupnum", "thumbsupnum");
+        put("favornum", "favornum");
+        put("replynum", "replynum");
+        put("sharenum", "sharenum");
+        put("createTime", "create_time");
+    }};
 
     // 高级查询
     @Override
@@ -64,6 +74,10 @@ public class StrategyServiceImpl extends ServiceImpl<StrategyMapper, Strategy> i
             } else {
                 queryWrapper.eq(Strategy::getThemeId, qo.getRefid());
             }
+        }
+        // 排序：白名单校验通过后按指定字段降序（使用映射后的真实列名）
+        if (qo.getOrderBy() != null && ORDER_BY_COLUMN_MAP.containsKey(qo.getOrderBy())) {
+            queryWrapper.last("ORDER BY " + ORDER_BY_COLUMN_MAP.get(qo.getOrderBy()) + " DESC");
         }
         // 分页查询
         return page(page, queryWrapper);
@@ -432,13 +446,13 @@ public class StrategyServiceImpl extends ServiceImpl<StrategyMapper, Strategy> i
             //点赞成功
             result = true;
             redisService.incrementCacheMapValue(statisKey, "thumbsupnum", 1);
+            // 调用统计数据持久化方法
         }
         Map<String, Object> cacheMap = redisService.getCacheMap(statisKey);
         cacheMap.put("result", result);
         return cacheMap;
 
     }
-
 
 // ==================== 提取的公共方法 ====================
 

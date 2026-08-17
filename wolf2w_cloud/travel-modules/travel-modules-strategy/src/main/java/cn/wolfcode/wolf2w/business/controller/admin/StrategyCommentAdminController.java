@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import cn.wolfcode.wolf2w.common.core.domain.R;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import cn.wolfcode.wolf2w.business.query.StrategyCommentQuery;
+import cn.wolfcode.wolf2w.business.query.StrategyCommentStatusRequest;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -32,7 +33,7 @@ import cn.wolfcode.wolf2w.common.core.utils.poi.ExcelUtil;
  * @date 2026-08-06
  */
 @RestController
-@RequestMapping("/admin/comments")
+@RequestMapping("/admin/strategyComments")
 public class StrategyCommentAdminController extends BaseController
 {
     @Autowired
@@ -83,13 +84,23 @@ public class StrategyCommentAdminController extends BaseController
     }
 
     /**
-     * 修改攻略评论
+     * 修改攻略评论状态
      */
     @RequiresPermissions("business:comment:edit")
     @Log(title = "攻略评论", businessType = BusinessType.UPDATE)
     @PutMapping
-    public R<?> edit(@RequestBody StrategyComment strategyComment)
+    public R<?> edit(@RequestBody StrategyCommentStatusRequest request)
     {
+        if (request.getId() == null) {
+            return R.fail("评论ID不能为空");
+        }
+        if (request.getState() == null || (request.getState() != 0L && request.getState() != 1L)) {
+            return R.fail("评论状态只能是0或1");
+        }
+
+        StrategyComment strategyComment = new StrategyComment();
+        strategyComment.setId(request.getId());
+        strategyComment.setState(request.getState());
         return toAjax(strategyCommentService.updateById(strategyComment));
     }
 

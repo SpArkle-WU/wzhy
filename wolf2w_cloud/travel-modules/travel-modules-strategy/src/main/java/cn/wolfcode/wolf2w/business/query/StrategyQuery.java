@@ -16,4 +16,6 @@ public class StrategyQuery extends  QueryObject{
     private Long type;
     // type=1 || type=2 refid 为目的地id type=3 refid 为主题id
     private Long refid;
+    // 排序字段，如 viewnum / thumbsupnum / favornum / replynum / sharenum / createTime
+    private String orderBy;
 }

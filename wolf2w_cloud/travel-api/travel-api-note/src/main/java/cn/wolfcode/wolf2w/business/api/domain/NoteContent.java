@@ -1,6 +1,8 @@
 package cn.wolfcode.wolf2w.business.api.domain;
 
 import cn.wolfcode.wolf2w.common.core.annotation.Excel;
+import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
@@ -19,7 +21,7 @@ public class NoteContent implements Serializable {
     private static final long serialVersionUID = 1L;
 
     /** 主键（非自增，与 ta_note.id 对应） */
-    @TableId
+    @TableId(type = IdType.INPUT)
     private Long id;
 
     /** 游记内容 */

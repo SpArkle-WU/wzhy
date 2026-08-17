@@ -1,6 +1,7 @@
 package cn.wolfcode.wolf2w.business.api.domain;
 
 import cn.wolfcode.wolf2w.common.core.annotation.Excel;
+import cn.wolfcode.wolf2w.member.api.domain.UserInfo;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
@@ -124,4 +125,10 @@ public class Note implements Serializable {
      */
     @TableField(exist = false)
     private NoteContent content;
+
+    /**
+     * 作者信息（非数据库字段，列表页通过 authorId 关联查询后填充，供前端显示头像与昵称）
+     */
+    @TableField(exist = false)
+    private UserInfo author;
 }

@@ -6,46 +6,52 @@ import com.aliyun.oss.OSSClientBuilder;
 import com.aliyun.oss.OSSException;
 import com.aliyun.oss.model.PutObjectRequest;
 import com.aliyun.oss.model.PutObjectResult;
-import org.apache.commons.io.FilenameUtils;
 
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.InputStream;
+import java.util.Properties;
 import java.util.UUID;
 
+/**
+ * 阿里云OSS上传测试类
+ * 密钥从 application-local.yml 同级目录的 oss-test.properties 读取，避免硬编码到源码中
+ * 运行前请在项目根目录创建 oss-test.properties 文件（该文件已在 .gitignore 中忽略）
+ */
 public class TestMain {
 
     public static void main(String[] args) {
 
-        // Endpoint以华北1（北京）为例，其它Region请按实际情况填写。
-        String endpoint = "https://oss-cn-beijing.aliyuncs.com";
+        // 从外部配置文件读取密钥，避免源码中硬编码敏感信息
+        Properties props = new Properties();
+        try (InputStream in = new FileInputStream("oss-test.properties")) {
+            props.load(in);
+        } catch (Exception e) {
+            System.out.println("未找到 oss-test.properties，请在项目根目录创建该文件并填写阿里云OSS配置");
+            e.printStackTrace();
+            return;
+        }
 
-        // 填写Bucket名称，例如examplebucket。
-        String bucketName = "wzhy";
+        // 从配置文件读取参数
+        String endpoint = props.getProperty("oss.endpoint");
+        String bucketName = props.getProperty("oss.bucket-name");
+        String accessKeyId = props.getProperty("oss.access-key-id");
+        String accessKeySecret = props.getProperty("oss.access-key-secret");
+
         // 填写Object完整路径，完整路径中不能包含Bucket名称，例如exampledir/exampleobject.txt。
         String objectName = "640.png";
         // 填写本地文件的完整路径，例如D:\\localpath\\examplefile.txt。
-        // 如果未指定本地路径，则默认从示例程序所属项目对应本地路径中上传文件。
-        String filePath= "E:\\Share\\640.png";
-
+        String filePath = "E:\\Share\\640.png";
 
         // 创建OSSClient实例。
-        // 当OSSClient实例不再使用时，调用shutdown方法以释放资源。
-
-        String accessKeyId = "your-access-key-id";
-        String accessKeySecret = "your-access-key-secret";
-
-
         OSS ossClient = new OSSClientBuilder().build(endpoint, accessKeyId, accessKeySecret);
         try {
             // 创建PutObjectRequest对象。
             PutObjectRequest putObjectRequest = new PutObjectRequest(bucketName, objectName, new File(filePath));
-            // 如果需要上传时设置存储类型和访问权限，请参考以下示例代码。
-            // ObjectMetadata metadata = new ObjectMetadata();
-            // metadata.setHeader(OSSHeaders.OSS_STORAGE_CLASS, StorageClass.Standard.toString());
-            // metadata.setObjectAcl(CannedAccessControlList.Private);
-            // putObjectRequest.setMetadata(metadata);
 
             // 上传文件。
             PutObjectResult result = ossClient.putObject(putObjectRequest);
+            System.out.println("上传成功");
         } catch (OSSException oe) {
             System.out.println("Caught an OSSException, which means your request made it to OSS, "
                     + "but was rejected with an error response for some reason.");
@@ -63,8 +69,5 @@ public class TestMain {
                 ossClient.shutdown();
             }
         }
-
-
     }
-
 }

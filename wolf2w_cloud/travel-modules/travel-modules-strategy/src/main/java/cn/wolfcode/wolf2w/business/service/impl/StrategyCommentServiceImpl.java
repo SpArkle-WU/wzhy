@@ -33,16 +33,15 @@ public class StrategyCommentServiceImpl extends ServiceImpl<StrategyCommentMappe
     @Override
     public IPage<StrategyComment> queryPage(StrategyCommentQuery qo) {
         IPage<StrategyComment> page = new Page<>(qo.getCurrentPage(), qo.getPageSize());
-        // 分页查询评论列表
+        // 1. 构建查询条件
         LambdaQueryWrapper<StrategyComment> wrapper = new LambdaQueryWrapper<StrategyComment>();
-        wrapper.eq(StrategyComment::getStrategyId, qo.getStrategyId());
+        wrapper.eq(qo.getStrategyId() != null, StrategyComment::getStrategyId, qo.getStrategyId());
+        wrapper.eq(qo.getState() != null, StrategyComment::getState, qo.getState());
+        wrapper.orderByDesc(StrategyComment::getCreateTime);
         baseMapper.selectPage(page, wrapper);
-        // 关联用户信息
         for (StrategyComment comment : page.getRecords()) {
             Long userId = comment.getUserId();
-            // 查询用户信息
-            UserInfo userInfo = remoteUserInfoService.getOne(userId,"inner").getData();
-            // 设置用户信息到评论对象
+            UserInfo userInfo = remoteUserInfoService.getOne(userId, "inner").getData();
             comment.setUser(userInfo);
         }
         return page;

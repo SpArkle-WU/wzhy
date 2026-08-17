@@ -15,4 +15,9 @@ public class StrategyCommentQuery extends  QueryObject{
      * 攻略id
      */
     private Long strategyId;
+
+    /**
+     * 状态 0正常 1禁用
+     */
+    private Long state;
 }

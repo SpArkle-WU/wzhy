@@ -18,6 +18,8 @@
         <module>travel-modules-destination</module>
         <module>travel-modules-strategy</module>
         <module>travel-modules-note</module>
+        <module>travel-modules-adv</module>
+        <module>travel-modules-search</module>
     </modules>
 
     <artifactId>travel-modules</artifactId>

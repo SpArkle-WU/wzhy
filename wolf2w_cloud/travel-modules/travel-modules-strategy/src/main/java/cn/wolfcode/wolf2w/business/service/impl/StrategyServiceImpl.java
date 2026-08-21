@@ -9,17 +9,23 @@ import cn.wolfcode.wolf2w.business.service.IStrategyRankService;
 import cn.wolfcode.wolf2w.business.service.IStrategyService;
 import cn.wolfcode.wolf2w.business.util.DateUtil;
 import cn.wolfcode.wolf2w.business.vo.ThemeVO;
+import cn.wolfcode.wolf2w.common.core.domain.R;
 import cn.wolfcode.wolf2w.common.core.utils.DateUtils;
 import cn.wolfcode.wolf2w.common.redis.service.RedisService;
 import cn.wolfcode.wolf2w.common.redis.util.RedisKeys;
 import cn.wolfcode.wolf2w.common.security.utils.SecurityUtils;
+import cn.wolfcode.wolf2w.common.rabbit.config.RabbitConfig;
+import com.alibaba.fastjson.JSON;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import io.netty.util.Timeout;
+import org.springframework.amqp.core.AmqpTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -51,6 +57,9 @@ public class StrategyServiceImpl extends ServiceImpl<StrategyMapper, Strategy> i
     @Autowired
     private RedisService redisService;
 
+    @Autowired
+    private AmqpTemplate amqpTemplate;
+
     // 排序字段 前端参数名 -> 数据库列名 的映射（白名单，防 SQL 注入）
     // 注意：.last() 拼的是原生 SQL，不会自动做驼峰→下划线转换，所以 createTime 要映射成 create_time
     private static final Map<String, String> ORDER_BY_COLUMN_MAP = new HashMap<String, String>() {{
@@ -61,6 +70,8 @@ public class StrategyServiceImpl extends ServiceImpl<StrategyMapper, Strategy> i
         put("sharenum", "sharenum");
         put("createTime", "create_time");
     }};
+    @Autowired
+    private RedisTemplate<Object, Object> redisTemplate;
 
     // 高级查询
     @Override
@@ -329,8 +340,17 @@ public class StrategyServiceImpl extends ServiceImpl<StrategyMapper, Strategy> i
         StrategyContent strategyContent = new StrategyContent();
         strategyContent.setId(id);
         strategyContent.setContent(content);
-        return strategyContentMapper.insert(strategyContent);
+        int ret = strategyContentMapper.insert(strategyContent);
 
+        // 11. 发送消息到队列
+        String message = JSON.toJSONString(strategy);
+
+        // 12.存储到Redis缓存中
+        String key = RedisKeys.STRATEGY_RABBITMQ_ZSET.getPrefix();
+        redisService.setCacheZSet(key,message,System.currentTimeMillis());
+        amqpTemplate.convertAndSend(RabbitConfig.EXCHANGE_NAME, RabbitConfig.ROUTING_KEY, message);
+
+        return ret;
     }
 
     // 点击量 + 1
@@ -418,7 +438,7 @@ public class StrategyServiceImpl extends ServiceImpl<StrategyMapper, Strategy> i
     public Boolean isUserFavor(Long sid, Long uid) {
 
         String key = RedisKeys.STRATEGY_FAVOR_SET.join(uid.toString());
-        return redisService.isCacheSetContains(key,sid);
+        return redisService.isCacheSetContains(key, sid);
     }
 
     // 点赞,一天只能点赞5次,过期时间1天
@@ -427,7 +447,7 @@ public class StrategyServiceImpl extends ServiceImpl<StrategyMapper, Strategy> i
 
         Long userId = SecurityUtils.getUserId();
         String key = RedisKeys.USER_STRATEGY_THUMBSUP.join(sid.toString(), userId.toString());
-        if ( ! redisService.hasKey(key)) {
+        if (!redisService.hasKey(key)) {
             Date now = new Date();
             Date endTime = DateUtil.getEndDate(now);
             long expireTime = DateUtil.getBetweenDate(now, endTime);
@@ -439,10 +459,10 @@ public class StrategyServiceImpl extends ServiceImpl<StrategyMapper, Strategy> i
         Long ret = redisService.incrementCacheObjectValue(key, 1);
         Boolean result = null;
         String statisKey = RedisKeys.STRATEGY_STATIS_HASH.join(sid.toString());
-        if(ret > 5){
+        if (ret > 5) {
             //今天点赞操作5次，点赞失败
             result = false;
-        }else{
+        } else {
             //点赞成功
             result = true;
             redisService.incrementCacheMapValue(statisKey, "thumbsupnum", 1);
@@ -452,6 +472,26 @@ public class StrategyServiceImpl extends ServiceImpl<StrategyMapper, Strategy> i
         cacheMap.put("result", result);
         return cacheMap;
 
+    }
+
+    // 检查在Redis中1分钟没有处理的消息
+    @Override
+    public void checkRabbitMQMessage() {
+
+        String key = RedisKeys.STRATEGY_RABBITMQ_ZSET.getPrefix();
+       // 当前时间戳 - 1分钟
+       double time = System.currentTimeMillis() - 60000;
+       // 从Redis中获取所有时间戳小于等于time的消息
+       Set<String> set = redisService.rangeByScore(key, time, time);
+       if (set.isEmpty()) {
+           return;
+       }
+       for (String message : set) {
+           // 处理消息 -- 补发消息到RabbitMQ队列,一直等待确认,直到消息被成功消费,到达预设次数后还未被消费进入死信队列
+           amqpTemplate.convertAndSend(RabbitConfig.QUEUE_NAME, message);
+           // 清空缓存中已处理的消息
+           redisService.deleteCacheZSetValue(key, message);
+       }
     }
 
 // ==================== 提取的公共方法 ====================

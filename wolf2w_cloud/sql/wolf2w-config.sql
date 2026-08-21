@@ -3,7 +3,7 @@ Navicat MySQL Data Transfer
 
 Source Server         : mysql5.7
 Source Server Version : 50715
-Source Host           : localhost:3309
+Source Host           : localhost:3306
 Source Database       : wolf2w-config
 
 Target Server Type    : MYSQL

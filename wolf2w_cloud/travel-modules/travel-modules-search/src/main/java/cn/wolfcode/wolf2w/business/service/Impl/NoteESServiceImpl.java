@@ -21,7 +21,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 @Service
-public class INoteESServiceImpl implements INoteESService {
+public class NoteESServiceImpl implements INoteESService {
     @Autowired
     private RemoteNoteService remoteNoteService;
     @Autowired

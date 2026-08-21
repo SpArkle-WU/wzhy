@@ -161,4 +161,12 @@ public class StrategyController {
         strategyService.statisHashMapPersist();
         return R.ok();
     }
+    /**
+     * 检查RabbitMQ队列是否有数据
+     */
+    @PostMapping("/feign/checkRabbitMQMessage")
+    R<?> checkRabbitMQMessage() {
+        strategyService.checkRabbitMQMessage();
+        return R.ok();
+    }
 }

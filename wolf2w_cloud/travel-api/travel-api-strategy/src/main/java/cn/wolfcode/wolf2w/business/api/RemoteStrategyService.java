@@ -42,4 +42,7 @@ public interface RemoteStrategyService {
      */
     @PostMapping("/strategies/feign/statisHashMapPersist")
     R<?> statisHashMapPersist(@RequestHeader(SecurityConstants.FROM_SOURCE) String source);
+
+    @PostMapping("/strategies/feign/checkRabbitMQMessage")
+    R<?> checkRabbitMQMessage(@RequestHeader(SecurityConstants.FROM_SOURCE) String source);
 }

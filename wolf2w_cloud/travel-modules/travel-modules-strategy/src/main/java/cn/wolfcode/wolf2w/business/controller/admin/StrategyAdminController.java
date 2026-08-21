@@ -79,7 +79,7 @@ public class StrategyAdminController extends BaseController
     @PostMapping
     public R<?> add(Strategy strategy)
     {
-        return toAjax(strategyService.insert(strategy));
+        return toAjax(strategyService.inserStrategyServiceImplt(strategy));
     }
 
     /**

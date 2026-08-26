@@ -30,6 +30,8 @@ public class NoteCommentController {
      */
     @GetMapping("/query")
     public R<IPage<NoteComment>> query(NoteCommentQuery qo) {
+        // 前台只能读取正常评论，状态筛选由后台管理接口承担。
+        qo.setStatus("0");
         return R.ok(noteCommentService.queryPage(qo));
     }
 
@@ -57,6 +59,7 @@ public class NoteCommentController {
     /*****************************************对外暴露 Feign 接口**********************************************/
 
     @GetMapping("/feign/list")
+    @InnerAuth
     public R<List<NoteComment>> feignList() {
         return R.ok(noteCommentService.list());
     }

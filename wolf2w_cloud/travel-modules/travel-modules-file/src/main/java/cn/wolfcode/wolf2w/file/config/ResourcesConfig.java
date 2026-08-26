@@ -16,15 +16,15 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 public class ResourcesConfig implements WebMvcConfigurer
 {
     /**
-     * 上传文件存储在本地的根路径
+     * 上传文件存储在本地的根路径（默认值兜底，避免启动时找不到占位符直接失败）
      */
-    @Value("${file.path}")
+    @Value("${file.path:D:/wolf2w/uploadPath/}")
     private String localFilePath;
 
     /**
-     * 资源映射路径 前缀
+     * 资源映射路径 前缀（默认值兜底）
      */
-    @Value("${file.prefix}")
+    @Value("${file.prefix:/static/}")
     public String localFilePrefix;
 
     @Override

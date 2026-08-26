@@ -12,6 +12,7 @@ import io.minio.MinioClient;
  * @author ruoyi
  */
 @Configuration
+@ConfigurationProperties(prefix = "minio")
 @ConditionalOnProperty(prefix = "store", name = "type", havingValue = "minio")
 public class MinioConfig
 {

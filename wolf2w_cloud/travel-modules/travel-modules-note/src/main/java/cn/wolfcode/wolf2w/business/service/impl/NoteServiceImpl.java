@@ -1,11 +1,18 @@
 // NoteServiceImpl.java
 package cn.wolfcode.wolf2w.business.service.impl;
 
+import cn.wolfcode.wolf2w.business.api.RemoteDestinationService;
+import cn.wolfcode.wolf2w.business.api.RemoteStrategyService;
+import cn.wolfcode.wolf2w.business.api.domain.Destination;
 import cn.wolfcode.wolf2w.business.api.domain.Note;
+import cn.wolfcode.wolf2w.business.api.domain.NoteComment;
 import cn.wolfcode.wolf2w.business.api.domain.NoteContent;
+import cn.wolfcode.wolf2w.business.api.domain.Strategy;
 import cn.wolfcode.wolf2w.business.mapper.NoteContentMapper;
 import cn.wolfcode.wolf2w.business.mapper.NoteMapper;
+import cn.wolfcode.wolf2w.business.query.NoteCommentQuery;
 import cn.wolfcode.wolf2w.business.query.NoteQuery;
+import cn.wolfcode.wolf2w.business.service.INoteCommentService;
 import cn.wolfcode.wolf2w.business.service.INoteService;
 import cn.wolfcode.wolf2w.business.util.DateUtil;
 import cn.wolfcode.wolf2w.business.vo.NoteDetailVO;
@@ -36,6 +43,12 @@ public class NoteServiceImpl extends ServiceImpl<NoteMapper, Note> implements IN
     @Autowired
     private RemoteUserInfoService remoteUserInfoService;
     @Autowired
+    private RemoteDestinationService remoteDestinationService;
+    @Autowired
+    private RemoteStrategyService remoteStrategyService;
+    @Autowired
+    private INoteCommentService noteCommentService;
+    @Autowired
     private RedisService redisService;
 
     @Override
@@ -53,25 +66,27 @@ public class NoteServiceImpl extends ServiceImpl<NoteMapper, Note> implements IN
                 wrapper.eq(Note::getStatus, qo.getStatus());
             }
         }
-
         // 目的地筛选
         if (qo.getDestId() != null) {
             wrapper.eq(Note::getDestId, qo.getDestId());
         }
-
         // 作者筛选（我的游记）
         if (qo.getAuthorId() != null) {
             wrapper.eq(Note::getAuthorId, qo.getAuthorId());
         }
-
         // 出发时间段筛选：travelTimeType 1-6 对应 1-2月、3-4月、5-6月、7-8月、9-10月、11-12月
         if (qo.getTravelTimeType() != null && !"-1".equals(qo.getTravelTimeType())) {
-            int type = Integer.parseInt(qo.getTravelTimeType());
-            int monthStart = (type - 1) * 2 + 1;
-            int monthEnd = type * 2;
-            wrapper.apply("MONTH(travel_time) BETWEEN {0} AND {1}", monthStart, monthEnd);
+            try {
+                int type = Integer.parseInt(qo.getTravelTimeType());
+                if (type >= 1 && type <= 6) {
+                    int monthStart = (type - 1) * 2 + 1;
+                    int monthEnd = type * 2;
+                    wrapper.apply("MONTH(travel_time) BETWEEN {0} AND {1}", monthStart, monthEnd);
+                }
+            } catch (NumberFormatException ignored) {
+                // Ignore invalid filter values rather than failing the whole list request.
+            }
         }
-
         // 人均花费筛选：consumeType 1-4 对应 1-999、1K-6K、6K-20K、20K以上
         if (qo.getConsumeType() != null && !"-1".equals(qo.getConsumeType())) {
             switch (qo.getConsumeType()) {
@@ -89,7 +104,6 @@ public class NoteServiceImpl extends ServiceImpl<NoteMapper, Note> implements IN
                     break;
             }
         }
-
         // 出行天数筛选：dayType 1-4 对应 3天以下、4-7天、8-14天、15天以上
         if (qo.getDayType() != null && !"-1".equals(qo.getDayType())) {
             switch (qo.getDayType()) {
@@ -107,7 +121,6 @@ public class NoteServiceImpl extends ServiceImpl<NoteMapper, Note> implements IN
                     break;
             }
         }
-
         // 排序：viewnum 最热（浏览数倒序）/ create_time 最新（创建时间倒序）
         if ("viewnum".equals(qo.getOrderBy())) {
             wrapper.orderByDesc(Note::getViewnum);
@@ -115,13 +128,10 @@ public class NoteServiceImpl extends ServiceImpl<NoteMapper, Note> implements IN
             // 默认按创建时间倒序（历史数据 release_time 全为 NULL，故改用 create_time）
             wrapper.orderByDesc(Note::getCreateTime);
         }
-
         // 使用 baseMapper.selectPage 确保分页插件正确统计 total
         baseMapper.selectPage(page, wrapper);
-
         // 填充作者信息（列表页展示头像与昵称）
         fillAuthorInfo(page.getRecords());
-
         return page;
     }
 
@@ -170,7 +180,7 @@ public class NoteServiceImpl extends ServiceImpl<NoteMapper, Note> implements IN
     public NoteDetailVO detail(Long id) {
         Note note = getById(id);
         NoteDetailVO vo = new NoteDetailVO();
-        if (note == null) {
+        if (note == null || !isPublic(note.getIsPublic())) {
             return vo;
         }
 
@@ -225,11 +235,71 @@ public class NoteServiceImpl extends ServiceImpl<NoteMapper, Note> implements IN
         // 6. 浏览量 +1（写入 Redis，异步刷库）
         this.viewnumIncr(id);
 
-        // （留给练习的 4 个 TODO — 不动）
-        // TODO: 通过 Feign 调用 destination 服务查关联目的地
-        // TODO: 通过 Feign 调用 strategy 服务查同目的地阅读量 top 攻略
-        // TODO: 查询同目的地阅读量 top 游记
-        // TODO: 查询游记评论列表
+        // 7. 通过 Feign 调用 destination 服务查关联目的地
+        if (note.getDestId() != null) {
+            try {
+                R<Destination> destR = remoteDestinationService.getOne(note.getDestId(), "inner");
+                if (destR != null && destR.getCode() == R.SUCCESS && destR.getData() != null) {
+                    vo.setDest(destR.getData());
+                }
+            } catch (Exception ignored) {
+                // Feign 调用失败时静默降级
+            }
+        }
+
+        // 8. 通过 Feign 调用 strategy 服务查同目的地阅读量 top 攻略（取前 3 条）
+        if (note.getDestId() != null) {
+            try {
+                // 查全量攻略，在内存中按 destId 过滤，按 viewnum 倒序取前 3
+                R<List<Strategy>> strategyR = remoteStrategyService.list("inner");
+                if (strategyR != null && strategyR.getCode() == R.SUCCESS && strategyR.getData() != null) {
+                    List<Strategy> topStrategies = strategyR.getData().stream()
+                            .filter(s -> note.getDestId().equals(s.getDestId()))
+                            .sorted((a, b) -> {
+                                Long va = a.getViewnum() != null ? a.getViewnum() : 0L;
+                                Long vb = b.getViewnum() != null ? b.getViewnum() : 0L;
+                                return Long.compare(vb, va);
+                            })
+                            .limit(3)
+                            .collect(java.util.stream.Collectors.toList());
+                    vo.setStrategies(topStrategies);
+                }
+            } catch (Exception ignored) {
+                // Feign 调用失败时静默降级，使用默认空集合
+            }
+        }
+
+        // 9. 查询同目的地阅读量 top 游记（取前 3 条，排除当前游记）
+        if (note.getDestId() != null) {
+            try {
+                List<Note> topNotes = lambdaQuery()
+                        .eq(Note::getDestId, note.getDestId())
+                        .ne(Note::getId, id)
+                        .in(Note::getIsPublic, "1", "true")
+                        .orderByDesc(Note::getViewnum)
+                        .last("limit 3")
+                        .list();
+                fillAuthorInfo(topNotes);
+                vo.setTravels(topNotes);
+            } catch (Exception ignored) {
+                // 查库失败时静默降级
+            }
+        }
+
+        // 10. 查询游记评论列表（第一页 10 条，按创建时间倒序）
+        try {
+            NoteCommentQuery commentQo = new NoteCommentQuery();
+            commentQo.setNoteId(id);
+            commentQo.setCurrentPage(1);
+            commentQo.setPageSize(10);
+            commentQo.setStatus("0");  // 只查正常状态的评论
+            IPage<NoteComment> commentPage = noteCommentService.queryPage(commentQo);
+            if (commentPage != null && commentPage.getRecords() != null) {
+                vo.setComments(commentPage.getRecords());
+            }
+        } catch (Exception ignored) {
+            // 查评论失败时静默降级，使用默认空集合
+        }
 
         return vo;
     }
@@ -258,6 +328,10 @@ public class NoteServiceImpl extends ServiceImpl<NoteMapper, Note> implements IN
         }
     }
 
+    private boolean isPublic(String isPublic) {
+        return "1".equals(isPublic) || "true".equalsIgnoreCase(isPublic);
+    }
+
     @Override
     @Transactional
     public boolean saveNote(Note note, String content) {
@@ -269,7 +343,9 @@ public class NoteServiceImpl extends ServiceImpl<NoteMapper, Note> implements IN
             // 待发布
             note.setReleaseTime(new Date());
         }
-        save(note);
+        if (!save(note)) {
+            return false;
+        }
 
         // 保存内容（id 与游记 id 一致）
         NoteContent noteContent = new NoteContent();
@@ -283,17 +359,26 @@ public class NoteServiceImpl extends ServiceImpl<NoteMapper, Note> implements IN
     @Override
     @Transactional
     public boolean updateNote(Note note, String content) {
+        if (note.getId() == null) {
+            return false;
+        }
         note.setUpdateTime(new Date());
         if ("1".equals(note.getStatus()) && note.getReleaseTime() == null) {
             note.setReleaseTime(new Date());
         }
-        updateById(note);
+        if (!updateById(note)) {
+            return false;
+        }
 
-        // 更新内容
-        NoteContent noteContent = new NoteContent();
-        noteContent.setId(note.getId());
-        noteContent.setContent(content);
-        noteContentMapper.updateById(noteContent);
+        // content 为 null 表示本次只修改基础信息，不能覆盖已有富文本。
+        if (content != null) {
+            NoteContent noteContent = new NoteContent();
+            noteContent.setId(note.getId());
+            noteContent.setContent(content);
+            if (noteContentMapper.updateById(noteContent) == 0) {
+                noteContentMapper.insert(noteContent);
+            }
+        }
 
         return true;
     }
@@ -385,7 +470,6 @@ public class NoteServiceImpl extends ServiceImpl<NoteMapper, Note> implements IN
         // 如果已经收藏，就什么都不做（静默幂等），不要抛异常 — 前端只判断 200
         this.statisHashMapPersist();
     }
-
     // 取消收藏
     @Override
     public void unFavor(Long nid) {
@@ -452,23 +536,23 @@ public class NoteServiceImpl extends ServiceImpl<NoteMapper, Note> implements IN
         // 1. 拼接 Redis 键 --> note_statis_hash:* （匹配所有游记）
         String key = RedisKeys.NOTE_STATIS_HASH.join("*");
         Collection<String> keys = redisService.keys(key);
-        if (keys.isEmpty()) {
+        if (keys == null || keys.isEmpty()) {
             return;
         }
 
         // 2. 遍历所有游记的 key，将 Redis 中的累计值刷回 DB
         for (String k : keys) {
             Map<String, Object> cacheMap = redisService.getCacheMap(k);
-            Long id = (Long) cacheMap.get("id");
+            Long id = toLong(cacheMap.get("id"));
             // id 为 null 说明是残缺 Hash（可能由 Redis 重启等异常导致），跳过避免破坏 DB 数据
             if (id == null) {
                 continue;
             }
-            Integer viewnum = (Integer) cacheMap.get("viewnum");
-            Integer thumbsupnum = (Integer) cacheMap.get("thumbsupnum");
-            Integer replynum = (Integer) cacheMap.get("replynum");
-            Integer sharenum = (Integer) cacheMap.get("sharenum");
-            Integer favornum = (Integer) cacheMap.get("favornum");
+            Integer viewnum = toInteger(cacheMap.get("viewnum"));
+            Integer thumbsupnum = toInteger(cacheMap.get("thumbsupnum"));
+            Integer replynum = toInteger(cacheMap.get("replynum"));
+            Integer sharenum = toInteger(cacheMap.get("sharenum"));
+            Integer favornum = toInteger(cacheMap.get("favornum"));
 
             lambdaUpdate()
                     .eq(Note::getId, id)
@@ -561,5 +645,13 @@ public class NoteServiceImpl extends ServiceImpl<NoteMapper, Note> implements IN
         map.put("favornum", note.getFavornum() != null ? note.getFavornum() : 0);
         redisService.setCacheMap(key, map);
         return map;
+    }
+
+    private Long toLong(Object value) {
+        return value instanceof Number ? ((Number) value).longValue() : null;
+    }
+
+    private Integer toInteger(Object value) {
+        return value instanceof Number ? ((Number) value).intValue() : null;
     }
 }

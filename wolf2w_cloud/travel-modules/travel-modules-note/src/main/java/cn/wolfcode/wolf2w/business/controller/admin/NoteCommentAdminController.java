@@ -47,17 +47,32 @@ public class NoteCommentAdminController extends BaseController {
     }
 
     /**
-     * 修改评论状态（0 正常 / 1 禁用）
+     * 后台新增游记评论（前端：addNoteComment(data) POST /note/admin/noteComments）
+     */
+    @RequiresPermissions("business:noteComment:add")
+    @Log(title = "游记评论", businessType = BusinessType.INSERT)
+    @PostMapping
+    public R<?> add(@RequestBody NoteComment comment) {
+        // 后台手动添加时走通用 addContent（会注入登录用户/时间/状态/游记标题冗余/回复数自增）
+        noteCommentService.addContent(comment);
+        return R.ok();
+    }
+
+    /**
+     * 修改游记评论 / 修改评论状态（0 正常 / 1 禁用）
+     * 前端：updateNoteComment(data) PUT /note/admin/noteComments
+     * 兼容通用状态修改：comment 对象只需要 id + status 即可做 status 切换
      */
     @RequiresPermissions("business:noteComment:edit")
     @Log(title = "游记评论", businessType = BusinessType.UPDATE)
-    @PutMapping("/status")
-    public R<?> status(@RequestBody NoteComment comment) {
+    @PutMapping
+    public R<?> edit(@RequestBody NoteComment comment) {
         return toAjax(noteCommentService.updateById(comment));
     }
 
     /**
-     * 删除游记评论
+     * 删除游记评论（支持单个 id 或逗号分隔多个 id）
+     * 前端：delNoteComment(id) DELETE /note/admin/noteComments/{id}
      */
     @RequiresPermissions("business:noteComment:remove")
     @Log(title = "游记评论", businessType = BusinessType.DELETE)

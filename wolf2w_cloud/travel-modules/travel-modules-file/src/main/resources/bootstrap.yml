@@ -7,9 +7,14 @@ spring:
   application:
     # 应用名称
     name: travel-file
+  servlet:
+    multipart:
+      # 游记封面通常超过 Spring Boot 默认的 1MB，保持与 FileUploadUtils 的 50MB 限制一致。
+      max-file-size: 50MB
+      max-request-size: 55MB
   profiles:
-    # 环境配置：改为 local，与 application.yml 一致
-    active: local
+    # 环境配置：改为 dev，匹配 Nacos 中的 travel-file-dev.yml
+    active: dev
   cloud:
     nacos:
       discovery:
@@ -20,6 +25,6 @@ spring:
         server-addr: 127.0.0.1:8848
         # 配置文件格式
         file-extension: yml
-        # 共享配置：如果 Nacos 中没有 application-local.yml 可以把这一行注释掉，避免启动报错
-        # shared-configs:
-        #   - application-${spring.profiles.active}.${spring.cloud.nacos.config.file-extension}
+        # 共享配置
+        shared-configs:
+          - application-${spring.profiles.active}.${spring.cloud.nacos.config.file-extension}

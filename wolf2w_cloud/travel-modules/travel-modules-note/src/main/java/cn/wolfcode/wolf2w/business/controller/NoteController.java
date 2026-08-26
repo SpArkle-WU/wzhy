@@ -33,6 +33,8 @@ public class NoteController {
      */
     @GetMapping("/query")
     public R<IPage<Note>> query(NoteQuery qo) {
+        // 后台查询标记只能由管理端 Controller 设置，不能信任外部请求参数。
+        qo.setAdmin(false);
         IPage<Note> page = noteService.queryPage(qo);
         return R.ok(page);
     }
@@ -144,6 +146,7 @@ public class NoteController {
     /*****************************************对外暴露 Feign 接口**********************************************/
 
     @GetMapping("/feign/list")
+    @InnerAuth
     public R<List<Note>> feignList() {
         return R.ok(noteService.list());
     }
@@ -158,6 +161,7 @@ public class NoteController {
      * 游记统计数据持久化到数据库
      */
     @PostMapping("/feign/statisHashMapPersist")
+    @InnerAuth
     R<?> statisHashMapPersist() {
         noteService.statisHashMapPersist();
         return R.ok();

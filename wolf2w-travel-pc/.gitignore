@@ -69,3 +69,7 @@ desktop.ini
 # 压缩包
 *.zip
 *.tar.gz
+
+# 本地私有配置，不提交仓库
+application-local.yml
+config/application-local.yml

@@ -9,7 +9,9 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 
 import java.io.Serializable;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.List;
 
 /**
  * 游记评论对象 ta_note_comment
@@ -50,7 +52,7 @@ public class NoteComment implements Serializable {
     @Excel(name = "评论状态")
     private String status;
 
-    /** 关联id（引用回复时记录被回复评论的id） */
+    /** 关联id（引用回复时记录被回复评论的id；顶级评论 refId 为 null 或 0） */
     @Excel(name = "关联id")
     private Long refId;
 
@@ -61,4 +63,12 @@ public class NoteComment implements Serializable {
     /** 用户信息（非数据库字段，关联查询使用） */
     @TableField(exist = false)
     private UserInfo user;
+
+    /** 子回复列表（非数据库字段，查询时根据 refId 树形组装后填充） */
+    @TableField(exist = false)
+    private List<NoteComment> comments = new ArrayList<>();
+
+    /** 被回复评论所属的用户信息（非数据库字段，展示回复时显示"回复@某某"） */
+    @TableField(exist = false)
+    private UserInfo refUser;
 }

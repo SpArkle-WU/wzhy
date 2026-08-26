@@ -22,7 +22,7 @@ import java.util.Map;
  * @date 2026-08-10
  */
 @RestController
-@RequestMapping("notes")
+@RequestMapping("/notes")
 public class NoteController {
 
     @Autowired
@@ -33,6 +33,8 @@ public class NoteController {
      */
     @GetMapping("/query")
     public R<IPage<Note>> query(NoteQuery qo) {
+        // 后台查询标记只能由管理端 Controller 设置，不能信任外部请求参数。
+        qo.setAdmin(false);
         IPage<Note> page = noteService.queryPage(qo);
         return R.ok(page);
     }
@@ -99,20 +101,23 @@ public class NoteController {
     }
 
     /**
-     * 收藏/取消收藏（切换状态）——前端 POST /note/notes/collect/{id}
+     * 收藏——前端 POST /note/notes/collect/{id}
      */
     @RequiresLogin
     @PostMapping("/collect/{id}")
-    public R<Map<String, Object>> collect(@PathVariable Long id) {
-        return R.ok(noteService.favor(id));
+    public R<Void> collect(@PathVariable Long id) {
+        noteService.favor(id);
+        return R.ok();
     }
 
     /**
-     * 查询用户是否已收藏
+     * 取消收藏——前端 POST /note/notes/uncollect/{id}
      */
-    @GetMapping("/isUserFavor")
-    public R<Boolean> isUserFavor(Long nid, Long uid) {
-        return R.ok(noteService.isUserFavor(nid, uid));
+    @RequiresLogin
+    @PostMapping("/uncollect/{id}")
+    public R<Void> uncollect(@PathVariable Long id) {
+        noteService.unFavor(id);
+        return R.ok();
     }
 
     /**
@@ -141,6 +146,7 @@ public class NoteController {
     /*****************************************对外暴露 Feign 接口**********************************************/
 
     @GetMapping("/feign/list")
+    @InnerAuth
     public R<List<Note>> feignList() {
         return R.ok(noteService.list());
     }
@@ -155,6 +161,7 @@ public class NoteController {
      * 游记统计数据持久化到数据库
      */
     @PostMapping("/feign/statisHashMapPersist")
+    @InnerAuth
     R<?> statisHashMapPersist() {
         noteService.statisHashMapPersist();
         return R.ok();

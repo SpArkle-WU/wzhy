@@ -100,4 +100,9 @@ public interface IStrategyService extends IService<Strategy>{
       * @return 点赞结果
       */
     Map<String, Object> thumbsup(Long sid);
+
+     /**
+      * 检查RabbitMQ队列是否有数据
+      */
+    void checkRabbitMQMessage();
 }

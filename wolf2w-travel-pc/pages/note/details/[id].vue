@@ -284,11 +284,13 @@ const formatTime = (time, type) => {
 // 顶
 const setTop = function () {
   setTopApi(id).then((res) => {
-    if(res.code==200){
+    if(res.data.result){
       ElMessage.success('顶成功了！');
+      getDetail()
+      getCommentsData()
+    }else{
+      ElMessage.warning('今天已经顶过了！');
     }
-    getDetail()
-    getCommentsData()
   })
 }
 // 收藏
@@ -304,7 +306,9 @@ const setCollect = function (name) {
 // 取消收藏
 const setUnCollect = function (name) {
   uncollect(id).then((res) => {
+    if (res.code == 200) {
     ElMessage.success('取消收藏成功');
+    }
     getDetail()
     getCommentsData()
   })

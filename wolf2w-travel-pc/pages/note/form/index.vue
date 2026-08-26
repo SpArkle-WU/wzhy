@@ -17,11 +17,25 @@
         <el-form ref="formRef" :model="form" :rules="rules" label-width="120px">
           <el-form-item label-width="50px" prop="title"> <el-input v-model="form.title" placeholder="请在这里输入标题" /> </el-form-item>
           <el-form-item label-width="50px" prop="coverUrl">
-            <el-upload class="upload-demo" :show-file-list="false" :multiple="false" name="file" style="width: 100%" :on-success="uploadSuc" action="/api/file/upload" :auto-upload="true" drag>
+            <el-upload
+              class="upload-demo"
+              :show-file-list="false"
+              :multiple="false"
+              name="file"
+              accept="image/jpeg,image/png,image/jpg,image/gif,image/bmp"
+              style="width: 100%"
+              :action="uploadAction"
+              :headers="uploadHeaders"
+              :data="uploadExtraData"
+              :before-upload="beforeUpload"
+              :on-success="uploadSuc"
+              :on-error="uploadErr"
+              :auto-upload="true"
+              drag
+            >
                 <el-icon class="el-icon--upload" v-if="!form.coverUrl"><upload-filled /></el-icon>
-                <!-- <img :src="form.coverUrl" v-else alt="游记封面图片" width="120" height="120"> -->
                 <img class="upload-img" :src="form.coverUrl" v-else alt="游记封面图片">
-                <div class="el-upload__text">将文件拖放到此处或<em>单击上上传</em></div>
+                <div class="el-upload__text">将文件拖放到此处或<em>单击上传</em></div>
               <template #tip>
                 <div class="el-upload__tip">大小 小于500kb的jpg/png文件</div>
               </template>
@@ -101,6 +115,60 @@ const form = reactive({
   contentStr: ''
 })
 
+// 上传接口地址（走 nuxt devProxy /api -> gateway:9000）
+const uploadAction = '/api/file/upload'
+
+// 上传请求头：携带 token，避免网关/后端因未登录拒绝请求
+const uploadHeaders = computed(() => {
+  const token = localStorage.getItem('token') || ''
+  return token ? { Authorization: token } : {}
+})
+
+// 上传表单额外数据（兼容后端若需要附加字段时预留）
+const uploadExtraData = () => ({})
+
+// 允许上传的图片类型
+const ALLOW_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/bmp']
+const MAX_SIZE_KB = 500
+
+// 上传前校验：类型 + 大小
+const beforeUpload = (file: File) => {
+  const isTypeAllowed = ALLOW_TYPES.includes(file.type)
+  if (!isTypeAllowed) {
+    ElMessage.error('只允许上传 jpg / png / gif / bmp 格式的图片')
+    return false
+  }
+  const isLt = file.size / 1024 <= MAX_SIZE_KB
+  if (!isLt) {
+    ElMessage.error(`图片大小不能超过 ${MAX_SIZE_KB}KB`)
+    return false
+  }
+  return true
+}
+
+// 上传成功回调：校验响应结构
+const uploadSuc = (response: any, uploadFile: any, uploadItems: any) => {
+  // 兼容 R 返回结构：{ code, msg, data: { name, url } }
+  if (!response || response.code !== 200) {
+    ElMessage.error((response && response.msg) || '封面上传失败，请重试')
+    return
+  }
+  const url = response && response.data && response.data.url
+  if (!url) {
+    ElMessage.error('封面上传失败：返回数据异常')
+    return
+  }
+  form.coverUrl = url
+  ElMessage.success('封面上传成功')
+}
+
+// 上传失败回调：HTTP/网络异常
+const uploadErr = (err: any, uploadFile: any, uploadItems: any) => {
+  console.error('cover upload error:', err)
+  ElMessage.error('封面上传失败，请检查登录状态或网络后重试')
+}
+
+
 const rules = reactive<FormRules>({
   title: [{ required: true, message: '请输入标题', trigger: 'blur' }],
   coverUrl:[{ required: true, message: '请上传封面', trigger: 'blur' }],
@@ -120,9 +188,6 @@ const initRegios =function () {
 }
 
 const formRef = ref<FormInstance>()
-const uploadSuc = function (response, file, fileLis) {
-  form.coverUrl = response.data.url
-}
 
 const onSubmit = async function (formEl: FormInstance | undefined) {
   console.log(formEl.contentStr);

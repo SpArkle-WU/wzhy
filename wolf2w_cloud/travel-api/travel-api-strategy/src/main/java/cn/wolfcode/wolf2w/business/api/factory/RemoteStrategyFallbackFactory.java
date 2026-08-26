@@ -51,6 +51,11 @@ public class RemoteStrategyFallbackFactory implements FallbackFactory<RemoteStra
             public R<?> statisHashMapPersist(String source) {
                 return R.fail("攻略数据持久化到数据库失败:" + throwable.getMessage());
             }
+
+            @Override
+            public R<?> checkRabbitMQMessage(String source) {
+                return R.fail("检查RabbitMQ队列是否有数据失败:" + throwable.getMessage());
+            }
         };
     }
 }

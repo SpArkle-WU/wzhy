@@ -3,7 +3,9 @@ package cn.wolfcode.wolf2w.file.controller;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 import cn.wolfcode.wolf2w.common.core.domain.R;
@@ -27,9 +29,13 @@ public class SysFileController
     /**
      * 文件上传请求
      */
-    @PostMapping("upload")
-    public R<SysFile> upload(MultipartFile file)
+    @PostMapping(value = "upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public R<SysFile> upload(@RequestParam("file") MultipartFile file)
     {
+        if (file == null || file.isEmpty())
+        {
+            return R.fail("请选择要上传的文件");
+        }
         try
         {
             // 上传并返回访问地址

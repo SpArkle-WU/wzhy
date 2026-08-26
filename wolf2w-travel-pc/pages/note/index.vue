@@ -2,7 +2,7 @@
   <div class="blog-container">
     <div class="blog-left">
       <el-tabs v-model="tabActive" class="blog-tabs" @tab-change="tabClick">
-        <el-tab-pane label="最新游记" name="first">
+        <el-tab-pane label="最热游记" name="first">
           <div class="newest-header">
             <ClientOnly>
               <el-form :inline="true" :model="newestForm" size="small">
@@ -82,7 +82,7 @@
               @current-change="firstChangeHandle" />
           </div>
         </el-tab-pane>
-        <el-tab-pane label="最热游记" name="second">
+        <el-tab-pane label="最新游记" name="second">
           <div class="newest-header">
             <ClientOnly>
               <el-form :inline="true" :model="hottestForm" size="small">

@@ -13,6 +13,8 @@
         <module>travel-api-member</module>
         <module>travel-api-destination</module>
         <module>travel-api-note</module>
+        <module>travel-api-adv</module>
+        <module>travel-api-search</module>
     </modules>
 
     <artifactId>travel-api</artifactId>

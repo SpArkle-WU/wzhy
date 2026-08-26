@@ -46,6 +46,14 @@ public class DestinationController {
     }
 
     /**
+     * 获取所有目的地，供前端写游记页面选择。
+     */
+    @GetMapping("/list")
+    public R<List<Destination>> list() {
+        return R.ok(destinationService.list());
+    }
+
+    /**
      * 获取热门目的地
      * @param ishot 是否热门
      * @return 列表

@@ -45,14 +45,14 @@ public interface INoteService extends IService<Note> {
     Map<String, Object> replynumIncr(Long nid);
 
     /** 收藏/取消收藏（切换状态） */
-    Map<String, Object> favor(Long nid);
-
-    /** 查询用户是否已收藏 */
-    Boolean isUserFavor(Long nid, Long uid);
+    void favor(Long nid);
 
     /** 点赞（每天最多 5 次） */
     Map<String, Object> thumbsup(Long nid);
 
     /** Redis 统计数据持久化到数据库 */
     void statisHashMapPersist();
+
+    /** 取消收藏 */
+    void unFavor(Long nid);
 }

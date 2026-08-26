@@ -151,12 +151,11 @@ function strategyThumbup(id) {
           message: '顶成功啦',
           type: 'success'
         })
-
         getStrategyList();
       } else {
         ElMessage({
           message: '今天已经顶过了',
-          type: 'success'
+          type: 'warning'
         })
       }
     })

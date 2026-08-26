@@ -1,5 +1,6 @@
 package cn.wolfcode.wolf2w.file.config;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -12,6 +13,7 @@ import io.minio.MinioClient;
  */
 @Configuration
 @ConfigurationProperties(prefix = "minio")
+@ConditionalOnProperty(prefix = "store", name = "type", havingValue = "minio")
 public class MinioConfig
 {
     /**

@@ -31,4 +31,10 @@ public class StrategyTask {
         remoteStrategyService.statisHashMapPersist("inner");
     }
 
+    // 检查RabbitMQ队列是否有数据
+    public void checkRabbitMQMessage() {
+        System.out.println("检查RabbitMQ队列是否有数据");
+        remoteStrategyService.checkRabbitMQMessage("inner");
+    }
+
 }

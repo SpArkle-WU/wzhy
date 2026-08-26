@@ -15,6 +15,9 @@ public enum RedisKeys {
     // 用户攻略点赞统计List表,多key(sid,uid)
     USER_STRATEGY_THUMBSUP("user_strategy_thumbsup", 60 * 60 * 24),
 
+    // 攻略的RabbitMQ队列数据,ZSet表
+    STRATEGY_RABBITMQ_ZSET("strategy_rabbitmq_zset", -1),
+
     // 游记统计Hash表
     NOTE_STATIS_HASH("note_statis_hash", -1),
     // 用户游记收藏统计Set表

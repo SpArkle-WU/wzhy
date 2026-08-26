@@ -14,25 +14,25 @@ import cn.wolfcode.wolf2w.file.utils.FileUploadUtils;
  * @author ruoyi
  */
 @Service
-@ConditionalOnProperty(prefix = "store", name = "type", havingValue = "local")
+@ConditionalOnProperty(prefix = "store", name = "type", havingValue = "local", matchIfMissing = true)
 public class LocalSysFileServiceImpl implements ISysFileService
 {
     /**
-     * 资源映射路径 前缀
+     * 资源映射路径 前缀（默认值兜底，避免 @Value 占位符缺失启动失败）
      */
-    @Value("${file.prefix}")
+    @Value("${file.prefix:/static/}")
     public String localFilePrefix;
 
     /**
-     * 域名或本机访问地址
+     * 域名或本机访问地址（默认值兜底）
      */
-    @Value("${file.domain}")
+    @Value("${file.domain:http://127.0.0.1:8086}")
     public String domain;
-    
+
     /**
-     * 上传文件存储在本地的根路径
+     * 上传文件存储在本地的根路径（默认值兜底）
      */
-    @Value("${file.path}")
+    @Value("${file.path:D:/wolf2w/uploadPath/}")
     private String localFilePath;
 
     /**

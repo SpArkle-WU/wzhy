@@ -121,3 +121,6 @@ config/application-local.yml
 *.key
 *.p12
 *.jks
+
+# TestMain 测试用的本地密钥配置文件
+oss-test.properties

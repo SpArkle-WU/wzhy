@@ -1,12 +1,17 @@
 package cn.wolfcode.wolf2w.business.vo;
 
+import cn.wolfcode.wolf2w.business.api.domain.Destination;
 import cn.wolfcode.wolf2w.business.api.domain.Note;
+import cn.wolfcode.wolf2w.business.api.domain.NoteComment;
 import cn.wolfcode.wolf2w.business.api.domain.NoteContent;
+import cn.wolfcode.wolf2w.business.api.domain.Strategy;
 import cn.wolfcode.wolf2w.member.api.domain.UserInfo;
 import lombok.Getter;
 import lombok.Setter;
 
 import java.io.Serializable;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * 游记详情视图对象（继承 Note，避免手动扁平展开）
@@ -30,4 +35,18 @@ public class NoteDetailVO extends Note implements Serializable {
     private Boolean favorFlag = false;
     /** 当前登录用户是否已关注作者（前端：isFollow） */
     private Boolean isFollow = false;
+
+    // ==================== 详情页新增聚合字段 ====================
+
+    /** 游记关联的目的地对象 */
+    private Destination dest;
+
+    /** 同目的地阅读量 top 攻略（默认取前 3 条） */
+    private List<Strategy> strategies = new ArrayList<>();
+
+    /** 同目的地阅读量 top 游记（默认取前 3 条，排除当前游记） */
+    private List<Note> travels = new ArrayList<>();
+
+    /** 游记评论列表（第一页，默认 10 条） */
+    private List<NoteComment> comments = new ArrayList<>();
 }

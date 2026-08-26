@@ -1,0 +1,912 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>技术实现说明 - 全文检索 / 高并发统计 / JWT</title>
+  <style>
+    :root {
+      --ink: #252525;
+      --muted: #666;
+      --paper: #fff;
+      --bg: #eeeeee;
+      --accent: #264653;
+      --accent-2: #2a9d8f;
+      --accent-3: #e9c46a;
+      --table-head: var(--accent);
+      --rule: #b8c9c8;
+      --line: #d8d8d8;
+      --soft: #f3f7f7;
+      --callout-bg: #f2f8f7;
+      --chart-1: #264653;
+      --chart-2: #2a9d8f;
+      --chart-3: #3a86a8;
+      --chart-4: #83b97f;
+      --chart-5: #e9c46a;
+      --chart-6: #b56576;
+      --blue: var(--accent);
+      --page-w: 210mm;
+      --page-h: 297mm;
+      --page-pad-top: 23mm;
+      --page-pad-x: 24mm;
+      --page-pad-bottom: 20mm;
+      --content-w: calc(var(--page-w) - var(--page-pad-x) * 2);
+      --content-h: calc(var(--page-h) - var(--page-pad-top) - var(--page-pad-bottom));
+      --column-gap: 36px;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Noto Serif SC", "Source Han Serif SC", "Songti SC", "SimSun", Georgia, serif;
+      font-size: 10.5pt;
+      line-height: 1.72;
+    }
+    body { padding: 14px 0 18px; overflow-x: hidden; }
+    #source {
+      position: fixed;
+      left: -99999px;
+      top: 0;
+      width: var(--content-w);
+      visibility: hidden;
+      pointer-events: none;
+    }
+    #cover-source {
+      position: fixed;
+      left: -99999px;
+      top: 0;
+      width: var(--page-w);
+      height: var(--page-h);
+      visibility: hidden;
+      pointer-events: none;
+    }
+    #pages {
+      counter-reset: source-item;
+      display: grid;
+      grid-template-columns: repeat(var(--page-columns, 1), max-content);
+      justify-content: center;
+      align-items: start;
+      gap: 14px 18px;
+      padding: 0 12px;
+    }
+    .viewer-tools {
+      position: fixed;
+      top: 10px;
+      left: 50%;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      width: max-content;
+      margin: 0;
+      padding: 3px;
+      background: rgba(255, 255, 255, .9);
+      border: 1px solid #d7dce5;
+      border-radius: 5px;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, .1);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      opacity: 0;
+      pointer-events: none;
+      transform: translateX(-50%) translateY(-8px);
+      transition: opacity .16s ease, transform .16s ease;
+    }
+    .viewer-tools.is-visible {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translateX(-50%) translateY(0);
+    }
+    .viewer-tools button {
+      width: 22px;
+      height: 22px;
+      padding: 0;
+      border: 1px solid #c6cfdd;
+      border-radius: 4px;
+      background: #fff;
+      color: var(--accent);
+      font-size: 14px;
+      line-height: 1;
+      cursor: pointer;
+    }
+    .viewer-tools button:hover { background: var(--soft); }
+    .viewer-tools output {
+      min-width: 38px;
+      color: #303846;
+      font-size: 11px;
+      text-align: center;
+      font-variant-numeric: tabular-nums;
+    }
+    .page-frame { width: var(--page-w); height: var(--page-h); margin: 0; }
+    .page {
+      width: var(--page-w);
+      height: var(--page-h);
+      margin: 0;
+      padding: var(--page-pad-top) var(--page-pad-x) var(--page-pad-bottom);
+      background: var(--paper);
+      border: 1px solid #dedede;
+      box-shadow: 0 1px 1px rgba(0,0,0,.05), 0 10px 34px rgba(0,0,0,.14);
+      position: relative;
+      overflow: hidden;
+      transform: scale(var(--page-scale, 1));
+      transform-origin: top left;
+    }
+    .page-content {
+      width: var(--content-w);
+      height: var(--content-h);
+      overflow: hidden;
+    }
+    .folio {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 9mm;
+      color: #888;
+      font-size: 9pt;
+      text-align: center;
+    }
+    .doc-flow {
+      width: var(--content-w);
+      background: var(--paper);
+      counter-reset: source-item;
+    }
+    .column-flow {
+      height: var(--content-h);
+      column-width: var(--content-w);
+      column-gap: var(--column-gap);
+      column-fill: auto;
+    }
+    .measure-flow {
+      position: fixed;
+      left: -99999px;
+      top: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+    .page-slice {
+      transform: translateX(calc(var(--slice-index) * -1 * (var(--content-w) + var(--column-gap))));
+      transform-origin: top left;
+    }
+    h1, h2, h3 {
+      color: var(--blue);
+      line-height: 1.28;
+      margin: 0;
+      font-weight: 700;
+      letter-spacing: 0;
+    }
+    h1 { font-size: 23pt; margin: 1mm 0 2.5mm; }
+    h2 { font-size: 16pt; padding-bottom: 4pt; border-bottom: 1px solid var(--rule); margin: 9mm 0 6mm; }
+    h3 { font-size: 12.5pt; margin: 7mm 0 3mm; }
+    .doc-flow > .flow-block:first-child h2,
+    .doc-flow > .flow-block:first-child h3 { margin-top: 0; }
+    p { margin: 0 0 4.5mm; text-align: justify; text-justify: inter-ideograph; }
+    ul, ol { margin: 2mm 0 5mm 0; padding-left: 16pt; }
+    li { margin: 0 0 2.5mm; }
+    table { width: 100%; border-collapse: collapse; margin: 4mm 0 5mm; font-size: 9.3pt; line-height: 1.55; break-inside: auto; page-break-inside: auto; }
+    thead { display: table-header-group; }
+    tfoot { display: table-footer-group; }
+    tr { break-inside: avoid; page-break-inside: avoid; }
+    th { background: var(--table-head); color: #fff; text-align: left; font-weight: 700; padding: 3.1mm 2.6mm; }
+    td { padding: 2.8mm 2.6mm; vertical-align: top; border-bottom: 1px solid #e7e7e7; }
+    tbody tr:nth-child(even) td { background: var(--soft); }
+    tbody tr:last-child td { border-bottom: 1.4px solid #303030; }
+    caption {
+      caption-side: bottom;
+      color: var(--muted);
+      font-size: 8.8pt;
+      padding-top: 1.5mm;
+      text-align: left;
+    }
+    .title-block { border-top: 2px solid var(--accent-2); padding-top: 4mm; margin-bottom: 1mm; }
+    .report-kicker { color: var(--accent-2); font-size: 8.8pt; font-weight: 700; margin-bottom: 1mm; }
+    .title-rule { display: none; }
+    .subtitle { color: var(--blue); font-size: 14pt; font-weight: 700; line-height: 1.38; margin: 0 0 3.2mm; max-width: 145mm; }
+    .meta {
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      color: #444;
+      display: grid;
+      font-size: 9pt;
+      gap: 2mm;
+      grid-template-columns: 1fr 1fr;
+      margin: 0;
+      padding: 2.2mm 0;
+      text-align: left;
+    }
+    .lead { font-size: 11.2pt; line-height: 1.78; }
+    .callout { border-left: 3px solid var(--blue); background: var(--callout-bg); padding: 4mm 5mm; margin: 5mm 0; }
+    .small { font-size: 9.2pt; color: var(--muted); }
+    code {
+      background: var(--soft);
+      padding: 0.5pt 3pt;
+      border-radius: 3pt;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 9.2pt;
+      color: #1f3f37;
+    }
+    pre {
+      background: #1d2a2f;
+      color: #e7e7e7;
+      padding: 4mm 5mm;
+      border-radius: 4pt;
+      font-size: 8.8pt;
+      line-height: 1.55;
+      overflow-x: auto;
+      margin: 4mm 0 5mm;
+    }
+    pre code {
+      background: transparent;
+      color: inherit;
+      padding: 0;
+      border-radius: 0;
+      font-size: inherit;
+    }
+    a { color: var(--blue); text-decoration: none; }
+
+    @page { size: A4; margin: var(--page-pad-top) var(--page-pad-x) var(--page-pad-bottom); }
+    @media print {
+      html, body { padding: 0; background: white; }
+      .viewer-tools { display: none; }
+      #pages { display: none !important; }
+      #source {
+        position: static;
+        visibility: visible;
+        pointer-events: auto;
+        width: auto;
+      }
+    }
+  </style>
+</head>
+<body data-theme="engineering">
+  <main id="source" class="doc-flow" aria-hidden="true">
+
+    <!-- 标题块 -->
+    <section class="flow-block title-block">
+      <p class="report-kicker">微服务项目 · 核心功能技术实现说明</p>
+      <h1>全文检索 · 高并发统计数字 · JWT 认证</h1>
+      <p class="subtitle">基于 Spring Cloud Alibaba + Nacos + Elasticsearch + Redis 架构下的落地实现</p>
+      <div class="meta">
+        <div><strong>项目：</strong>wolf2w_cloud 旅行微服务平台</div>
+        <div><strong>日期：</strong>2026-08-26</div>
+        <div><strong>模块：</strong>travel-note / travel-strategy / travel-search / travel-gateway / travel-auth</div>
+        <div><strong>作者：</strong>技术实现整理</div>
+      </div>
+    </section>
+
+    <section class="flow-block">
+      <p class="lead">
+        本文档围绕旅行微服务项目的三个核心技术点进行详尽的实现说明：
+        第一部分讲解基于 Elasticsearch 与 IK 分词插件实现的<strong>全文检索与高亮</strong>，包含选型背景、索引模型、数据同步链路、搜索请求构建与回源填充，以及与网关前端的集成；
+        第二部分讲解基于 Redis Hash、Set 与 Quartz 批量回写实现的<strong>高并发统计数字</strong>，涵盖浏览量、点赞数、收藏数、分享数、评论数五类计数器的原子性、持久化策略、冷启动回源与限流；
+        第三部分讲解基于 JJWT + Spring Cloud Gateway 过滤器链实现的<strong> JWT 无状态认证体系</strong>，涵盖双 Token 签发、白名单与权限解耦、跨服务安全透传，以及登出/强制下线的黑名单机制。
+        每个部分均紧扣项目中的真实代码结构、类名、Key 命名与执行时序。
+      </p>
+    </section>
+
+    <!-- ========== 一、全文检索 ========== -->
+    <section class="flow-block">
+      <h2>一、全文检索（Elasticsearch + IK 分词 + 高亮回填）</h2>
+    </section>
+
+    <section class="flow-block">
+      <h3>1.1 选型背景与问题引入</h3>
+      <p>
+        旅行平台的核心需求是"让用户在海量攻略、游记、目的地中快速找到想要的内容"。
+        如果直接在 MySQL 业务表上使用 <code>LIKE '%关键词%'</code> 做模糊搜索，会产生三个不可接受的问题：
+        第一，<strong>无法利用 B+ 树索引</strong>，前缀的通配符 <code>%</code> 让索引失效，当表数据超过 10 万条时单表查询会飙到秒级甚至几十秒，完全无法满足互联网产品"毫秒级响应"的预期；
+        第二，<strong>不支持中文语义分词</strong>，用户输入"北京三日游"只能在标题或摘要中精确匹配连续 5 个字的字符串，无法识别"北京 + 三日 + 自由行 + 故宫攻略"这类词项级别的相关性；
+        第三，<strong>没有相关性评分与结果高亮</strong>，用户不知道返回的列表中哪一条是真正"命中了关键词"、哪一条只是偶发命中，浏览体验差。
+      </p>
+      <p>
+        基于以上痛点，项目选用 <strong>Elasticsearch 7.x + IK Analyzer 中文分词器</strong> 作为全文检索引擎。
+        Elasticsearch 是构建在 Apache Lucene 之上的分布式搜索引擎，采用<strong>倒排索引</strong>（Term → DocId 列表）的数据结构把关键词命中复杂度降到 <code>O(1)</code>；
+        主分片 + 副本的水平扩展架构使它可以轻松支撑百万级文档以上的读写吞吐；
+        IK 分词器提供细粒度 <code>ik_max_word</code>（索引阶段尽量拆词）与粗粒度 <code>ik_smart</code>（查询阶段合词组）的"索引时最细、检索时合词"双策略，保证召回率与准确率的平衡；
+        内置的 Highlight 模块支持自定义前后标签，可直接输出带 <code>&lt;span style="color:red"&gt;</code> 的高亮 HTML 片段，前端用 <code>v-html</code> 即可渲染。
+      </p>
+    </section>
+
+    <section class="flow-block">
+      <h3>1.2 索引模型与字段设计</h3>
+      <p>
+        项目定义了 <code>NoteES</code>、<code>StrategyES</code> 两套文档实体，分别对应游记与攻略两类内容。
+        以游记文档 <code>NoteES</code> 为例，关键字段如下：
+        <code>id</code>（Long，与 MySQL <code>ta_note</code> 主键一一对应，方便回源查业务字段）；
+        <code>title</code>（游记标题，<code>ik_max_word</code> 建索引、<code>ik_smart</code> 查询分词，权重 3.0）；
+        <code>summary</code>（摘要，同标题分词策略，权重 1.5）；
+        <code>destId</code>、<code>destName</code>（目的地 ID 与名称，精确匹配型，用于"某城市下游记"过滤）；
+        <code>authorId</code>、<code>authorNickname</code>（作者信息，冗余写入便于"按作者"二次过滤时不回源）；
+        <code>createTime</code>（发布时间，<code>yyyy-MM-dd HH:mm:ss</code> 格式，<code>date</code> 类型，做时间范围过滤或按时间倒排）；
+        以及 <code>viewNum</code>、<code>isPublic</code> 等辅助属性。
+      </p>
+      <p>
+        注意，<strong>不会把富文本内容全文写入 ES</strong>，原因有三：
+        一是游记正文的 HTML 标签、图片占位符会严重污染分词词典，产生大量噪音词项；
+        二是正文内容体积大，单个文档动辄几万字，占用 ES 堆内存和磁盘空间；
+        三是真正驱动用户"点击进入详情页"的决策信息主要集中在标题与摘要中，召回结果只要标题和摘要命中就足以引导用户，命中正文的需求概率极低，代价却很高。
+        因此最终采用"标题 + 摘要进 ES 做召回，详情页仍查 MySQL + Redis"的混合架构。
+      </p>
+    </section>
+
+    <section class="flow-block">
+      <h3>1.3 数据同步链路（初始化 + 增量）</h3>
+      <p>
+        项目采用 <strong>"MySQL 为真相源，ES 为加速查询层"</strong> 的双写架构，通过两条链路保证数据一致性。
+        第一条是<strong>初始化同步</strong>，由 <code>NoteESServiceImpl.init()</code> 方法对外暴露，系统第一次部署、ES 索引损坏重建、或大版本升级字段结构时人工触发。
+        该方法流程是：先从 <code>ta_note</code> 表分页查询所有审核状态为 <code>RELEASE（已发布）</code> 的游记记录（避免把草稿、待审核、驳回的内容放进搜索结果），遍历每页数据使用 <code>org.apache.commons.beanutils.BeanUtils.copyProperties(target, source)</code> 拷贝到 <code>NoteES</code> 文档对象；
+        达到批量阈值（一般 500~1000 条）后调用 <code>RestHighLevelClient.bulk(BulkRequest)</code> 一次性提交，减少网络 RTT；
+        结束后打印 <code>"note 索引数据初始化完成，共 N 条"</code> 日志。为了防止启动时大表全量扫 MySQL 造成业务抖动，初始化链路采用手动触发，不放进 ApplicationRunner 自动执行。
+      </p>
+      <p>
+        第二条是<strong>增量同步</strong>，在业务 Service 层触发：
+        当游记审核通过（<code>NoteService.audit(id, RELEASE)</code>）或管理员修改游记标题/摘要/目的地后，立即构造 <code>NoteES</code> 对象并调用 <code>NoteESService.save(es)</code>，内部是 <code>IndexRequest</code> + <code>client.index()</code>；
+        当游记被删除（<code>NoteAdminController.delete(ids)</code>）或审核驳回为非公开状态时，调用 <code>NoteESService.deleteById(id)</code>，内部是 <code>DeleteRequest</code> + <code>client.delete()</code>。
+        这条链路保证"用户在后台点完保存/审核/删除，最多 500ms 后在前台搜索就能看到最新结果"，因为 Elasticsearch 默认 1s refresh 间隔。
+        如果未来一致性要求提升到"写后立即可读"，可以把操作转成 RabbitMQ 消息队列异步写入，用队列削峰避免 Service 方法阻塞，但本项目当前量级直接同步调用已足够。
+      </p>
+    </section>
+
+    <section class="flow-block">
+      <h3>1.4 搜索请求构建与高亮实现</h3>
+      <p>
+        搜索入口是 <code>SearchController.search(qo)</code>，前端传三个参数：
+        <code>type</code>（1=攻略、2=游记、0=全部）、<code>keyword</code>（搜索词）、<code>pageNum/pageSize</code>。
+        Controller 层调用 <code>SearchServiceImpl.searchWitHighLight(qo)</code> 完成从 ES 查询到回源填充的完整链路。这个方法的实现可以拆成 6 个步骤：
+      </p>
+      <p>
+        <strong>第一步：构造 SearchRequest。</strong> 根据 <code>type</code> 选择索引名：
+        type=1 用 <code>strategy</code>，type=2 用 <code>note</code>，type=0 两个一起查（本项目先实现 type=2 游记高亮，按 type 分支路由）。
+        同时把 <code>qo.getCurrent()</code> 与 <code>qo.getSize()</code> 换算为 ES 的 <code>from = (current-1)*size</code>、<code>size = size</code>，注意 ES 默认 <code>from+size ≤ 10000</code>，如果未来深分页需要换成 <code>search_after</code>。
+      </p>
+      <p>
+        <strong>第二步：构造 BoolQueryBuilder（查询 DSL）。</strong>
+        外层 <code>boolQuery</code> 中加一个 <code>filter(termQuery("isPublic", true))</code> 过滤草稿/未通过，再把真正的关键词查询放在 <code>must</code> 子句：
+        <code>multiMatchQuery(keyword, "title", "summary")</code>。
+        这里对 <code>title</code> 字段显式设置 <code>.field("title", 3.0f)</code>（Boost），即标题命中的权重是摘要命中的 3 倍，这样"关键词出现在标题里的游记"会排在前面，符合用户预期。
+        分词策略上因为 mapping 里 <code>search_analyzer</code> 已经设置为 <code>ik_smart</code>，所以查询端不需要额外指定，ES 会自动按"合词"方式切关键词。
+      </p>
+      <p>
+        <strong>第三步：构造 HighlightBuilder（高亮规则）。</strong>
+        设置前标签 <code>preTags = "&lt;span style=\"color:red\"&gt;"</code>、后标签 <code>postTags = "&lt;/span&gt;"</code>；
+        添加高亮字段 <code>.field("title")</code> 和 <code>.field("summary")</code>；
+        对摘要字段显式 <code>.fragmentSize(180)</code> 与 <code>.noMatchSize(180)</code>，意思是"即使没命中也要返回前 180 个字符，保证列表 UI 高度稳定；命中时返回最相关的 180 字符片段而不是整段"。
+        这一步非常重要，不然 <code>highlightFields.get("summary")</code> 会因为未命中返回 null，前端渲染出来摘要是空的。
+      </p>
+      <p>
+        <strong>第四步：执行搜索 + 遍历命中。</strong>
+        调用 <code>client.search(searchRequest, RequestOptions.DEFAULT)</code> 得到 <code>SearchResponse</code>，循环 <code>response.getHits().getHits()</code>：
+        先 <code>JSON.parseObject(hit.getSourceAsString(), NoteES.class)</code> 拿到原始文档对象；
+        再判断 <code>hit.getHighlightFields()</code> 中是否存在 <code>title</code> 键，如果有调用 <code>.fragments()[0].string()</code> 取带 <code>&lt;span&gt;</code> 的高亮片段覆盖掉 NoteES 原本的 title；
+        对 summary 做相同操作。
+        把所有处理后的 NoteES 收进 List，同时把总命中数 <code>response.getHits().getTotalHits().value</code> 记下来用于分页对象的 total。
+      </p>
+      <p>
+        <strong>第五步：回源填充业务字段。</strong>
+        ES 文档里只存了召回所需最小字段（标题/摘要/作者昵称缩略），但真正页面上还需要封面图、完整作者头像、目的地城市名、浏览量、点赞数、格式化后的相对时间等。
+        所以第五步是把 NoteES 的 <code>id</code> 收集成一个 <code>List&lt;Long&gt; ids</code>，批量调用 Feign <code>remoteNoteService.listByIds(ids, "inner")</code> 从业务服务拿完整 Note 对象列表，
+        建立 <code>Map&lt;Long, Note&gt; id2Note</code> 后按原 ES 命中顺序遍历：如果 id 在 map 中存在，就把封面图、viewNum、destName、格式化日期等回填到最终给前端的 <code>SearchVO</code>；
+        如果 ES 命中了但 DB 里不存在（极少情况：审核状态变更但 ES 延迟删除），直接过滤掉这条结果。
+      </p>
+      <p>
+        <strong>第六步：返回 Page 分页对象。</strong> 把处理后的 <code>List&lt;SearchVO&gt;</code>、<code>total</code>、传入的 <code>current/size</code> 组装成 MyBatis-Plus <code>Page</code> 对象返回。
+        前端拿到的数据中，title 与 summary 字段已经包含红色 span 标签，配合样式表即可高亮展示。
+      </p>
+    </section>
+
+    <section class="flow-block">
+      <h3>1.5 与前端、网关的集成</h3>
+      <p>
+        前端搜索框的交互流程是：用户键入关键词后按回车 → <code>this.$router.push(`/search?type=${type}&amp;keyword=${encodeURIComponent(keyword)}`)</code> 跳转到搜索结果页 → 搜索页 <code>onMounted</code> 读取 URL query 中的参数 → 调用 <code>searchApi.search({ type, keyword, pageNum: 1, pageSize: 10 })</code>。
+        这个请求被网关 <code>travel-gateway</code> 的路由规则 <code>Path=/search/**, StripPrefix=1</code> 转发到 <code>travel-search</code> 服务的 <code>/search</code> 接口。
+        由于搜索接口是匿名访问，网关层的 <code>security.ignore.whites</code> 白名单中必须包含 <code>/search</code>（或更精确 <code>/search/...</code> 的通配规则），否则未登录用户调用会被 JwtAuthenticationFilter 拒绝返回 401。
+      </p>
+      <p>
+        最后讨论两个<strong>降级与扩展</strong>方案：
+        当 ES 服务宕机或连接超时抛出 <code>ConnectException</code> 时，搜索方法内部用 <code>try-catch</code> 捕获后降级为"直接走 MySQL 模糊查询 + 不高亮"的兜底路径，即使用 <code>ta_note.title LIKE '%keyword%' OR summary LIKE '%keyword%'</code> 配合 <code>LIMIT</code>，保证功能可用只是变慢；
+        未来的增强方向包括：1）开启 <code>suggest</code> 模式做"搜索下拉联想词"；2）接入同义词词典（"自由行↔自助游↔自由行"）；3）引入 Fuzzy 查询支持少量错别字（"上海迪士尼"→"上海迪士你"）；4）使用 Function Score Query 在 BM25 相关性基础上叠加浏览量/点赞权重，实现"内容优质 + 关键词匹配"双维度排序。
+      </p>
+    </section>
+
+    <!-- ========== 二、高并发统计数字 ========== -->
+    <section class="flow-block">
+      <h2>二、高并发统计数字（Redis Hash 计数 + Quartz 批量持久化）</h2>
+    </section>
+
+    <section class="flow-block">
+      <h3>2.1 需求背景与直接写 MySQL 的瓶颈分析</h3>
+      <p>
+        旅行平台中"每一篇游记/攻略都需要展示 5 个核心统计数字"：
+        <strong>浏览量 viewNum</strong>（用户点击详情页 +1）、
+        <strong>点赞数 thumbsupNum</strong>（用户点击"有帮助"按钮 +1/取消 -1，每日限 5 次）、
+        <strong>收藏数 favorNum</strong>（用户"收藏"笔记 +1）、
+        <strong>分享数 shareNum</strong>（用户点击"分享到微信/朋友圈" +1）、
+        <strong>评论数 replyNum</strong>（用户发表评论后 +1）。
+        同时还要支持"按浏览量排序""按最热排行""查看用户今天有没有给这篇点赞/收藏"等查询型接口。
+      </p>
+      <p>
+        如果直接用 MySQL 事务做 <code>UPDATE ta_note SET viewnum = viewnum + 1 WHERE id = ?</code>，在高并发场景下有四个瓶颈：
+        第一，<strong>行锁竞争严重</strong>。热门游记（例如首页轮播）每秒被几千个用户访问，InnoDB 行锁会让所有 UPDATE 串行等待，热点行变成整个系统的瓶颈；
+        第二，<strong>写放大严重</strong>。每次自增都是一次完整的磁盘刷盘（双写 + redo log + binlog），QPS 稍微高一些就把数据库写满，影响其他业务查询；
+        第三，<strong>雪崩风险</strong>。Redis 宕机时如果所有统计写入都落到 DB，DB 很快被压垮而产生雪崩；
+        第四，<strong>"用户今天有没有点过赞"这种判断依赖用户维度数据</strong>，如果写在 DB 的 <code>ta_note_like</code> 关联表里，每次点赞前 SELECT 一次是强一致性，但是高并发下 IO 压力极大。
+      </p>
+      <p>
+        因此项目采用 <strong>"Redis 实时计数器 + Quartz 定时批量回写 MySQL + 查询时懒加载回源"</strong> 的三层架构。Redis 单线程事件驱动 + 多路 IO 复用使得 HINCRBY、SISMEMBER 等命令都在微秒级返回，轻松支撑百万 QPS；Quartz 每 5 分钟把增量值合并回 MySQL，把 N 次 DB 写减少为 1 次；
+        即使 Redis 故障重启，也能通过"查询时回源 + DB 基线"自动恢复缓存值，不丢失真实统计数据。
+      </p>
+    </section>
+
+    <section class="flow-block">
+      <h3>2.2 数据结构设计（Hash / Set / String 组合拳）</h3>
+      <p>
+        项目中为每一类统计场景选择了最合适的 Redis 数据结构：
+      </p>
+      <p>
+        <strong>（1）5 维度计数器：Redis Hash Key = <code>note_statis_hash:{noteId}</code>。</strong>
+        Field 分别为 <code>viewnum</code>、<code>thumbsupnum</code>、<code>favornum</code>、<code>sharenum</code>、<code>replynum</code>，Value 是 64 位整数。
+        选择 Hash 而不是 5 个独立 String Key，有三个原因：
+        一是<strong>内存紧凑</strong>，当 Field 数量少且 key 总长度 <code>64</code> 字节以内时，Redis 内部用 <code>ziplist</code>（listpack）编码，比 5 条独立字符串节省 70%~80% 内存；
+        二是<strong>接口一致</strong>，查询详情页只需一次 <code>HGETALL note_statis_hash:123</code> 就能拿到 5 个统计维度，网络 RTT 从 5 次降到 1 次，对微服务跨机房部署尤其友好；
+        三是<strong>批量操作原子</strong>，自增用 <code>HINCRBY key field 1</code>，取值用 <code>HMGET key f1 f2...</code>，整个链路不需要事务锁。
+      </p>
+      <p>
+        <strong>（2）用户点赞状态：Redis Set Key = <code>note:liked:userIds:{noteId}</code>。</strong>
+        Set 里保存所有"给这篇游记点过赞的 userId"，判断某用户有没有点过赞直接 <code>SISMEMBER note:liked:userIds:123 userId</code>，时间复杂度 <code>O(1)</code>；
+        点赞 <code>SADD</code>，取消点赞 <code>SREM</code>。这个结构天然保证"一个用户对一篇游记只能有一次有效点赞"，点赞接口先判断 <code>SADD</code> 返回值是 0 还是 1，如果是 0（已存在）则返回"您已经为该游记点过赞"，不会重复计数。
+        （注意：点赞数 thumbsupNum = Set 大小，但为了兼容历史数据和查询性能，项目仍然在 Hash 中单独维护 thumbsupnum 而不是 SCARD，避免 Set 中元素过多导致 SCARD 虽然 O(1) 但 CPU 抖动，同时跨模块接口只返回 Hash 值保持一致。）
+      </p>
+      <p>
+        <strong>（3）收藏状态：Redis Set Key = <code>user:favor:notIds:{userId}</code>。</strong>
+        它的键是按"用户维度"组织，里面存的是"这个用户收藏过哪些游记 id"，因为收藏列表接口通常是"我的收藏页按用户查"，用 user 维度 Set 直接 <code>SMEMBERS</code> 拿全部 id 回源查 MySQL，比按 note 维度建 Set 要省一次全局扫描。
+      </p>
+      <p>
+        <strong>（4）每日点赞限流：String Key = <code>note:like:limit:{userId}:{noteId}:{yyyyMMdd}</code>。</strong>
+        需求规定"同一用户每天对同一游记最多点赞 5 次"（含取消重投、重复点击等场景，防止用脚本刷榜单）。
+        实现采用 <code>INCR</code> + EXPIRE 组合：每次点赞前先 <code>INCR</code> 这个字符串，如果返回值 <code>&gt; 5</code> 直接拒绝；
+        第一次返回值 == 1 时再 <code>EXPIRE key 86400</code> 让第二天自动清零。
+        因为 INCR 和 EXPIRE 都是 O(1) 且可以用 Lua 脚本打包成一个原子命令，避免两次网络往返的同时防止"INCR 成功后 EXPIRE 失败"造成的 key 永久存在泄漏问题。
+      </p>
+    </section>
+
+    <section class="flow-block">
+      <h3>2.3 原子自增与接口时序</h3>
+      <p>
+        所有计数接口都严格遵循"先写 Redis，再考虑回源"的链路，因为用户点击界面时最直观的体验是"数字必须立即 +1"，哪怕 DB 里暂时没写进去也没关系，用户接受"稍后持久化"但不接受"点了没反应"。
+      </p>
+      <p>
+        以<strong>浏览量自增</strong>为例，详情页接口 <code>NoteController.detail(noteId)</code> 的执行顺序是：
+        <strong>1）</strong>先从 DB /缓存里拿到游记基本信息和内容；
+        <strong>2）</strong>调用 Redis 模板 <code>boundHashOps("note_statis_hash:" + noteId).increment("viewnum", 1)</code>，这是 Spring Data Redis 对 <code>HINCRBY</code> 的封装，原子执行；
+        <strong>3）</strong>调用 <code>HGETALL note_statis_hash:{noteId}</code> 拿到最新的 5 个统计数字，回填到 VO 对象返回前端；
+        <strong>4）</strong>如果该笔记是第一次被访问（HGETALL 只返回 viewnum=1），其他 4 个字段为 null，Service 层会把 null 当作 0 处理后再交给 VO，保证前端 UI 显示为 0 而不是空白。
+      </p>
+      <p>
+        再以<strong>点赞接口</strong>为例：<code>NoteController.thumb(id)</code> 的执行顺序是：
+        <strong>1）</strong>先做"每日限流"：<code>INCR note:like:limit:{userId}:{noteId}:{yyyyMMdd}</code>，如果结果 &gt; 5 直接抛业务异常，同时回滚计数（用 DECR 补偿或 Lua 内一次性判断）；
+        <strong>2）</strong>再做"用户是否已点赞"判断：<code>SADD note:liked:userIds:{noteId} userId</code>，返回 1 表示今天第一次成功点赞，<code>HINCRBY thumbsupnum 1</code> 并返回 <code>R.ok("点赞成功")</code>；
+        返回 0 表示该用户已经点过赞，执行取消点赞逻辑：<code>SREM</code> 后 <code>HINCRBY thumbsupnum -1</code> 并返回 <code>R.ok("已取消点赞")</code>；
+        <strong>3）</strong>点赞状态接口返回 thumbsupnum 的最终值与"当前用户是否已点赞"布尔值，前端据此切换"心形图标实心/空心"并刷新数字。
+      </p>
+      <p>
+        这里有两个<strong>并发安全</strong>点需要注意：
+        一是 Redis 命令本身就是单线程原子的，所以 SADD/HINCRBY 组合不会出现"两人同时点赞导致重复 +1"问题；
+        二是如果用户点赞频繁，Redis 服务端每秒可能产生几十万个写操作，但因为 Redis 只做内存读写（AOF 默认每秒刷一次），轻松消化。
+        项目使用 Lettuce 客户端配合线程池，连接池大小配置在 Nacos 的共享 <code>application-dev.yml</code> 中，保证不会因连接数耗尽阻塞业务线程。
+      </p>
+    </section>
+
+    <section class="flow-block">
+      <h3>2.4 持久化策略（Quartz 每 5 分钟批量回写）</h3>
+      <p>
+        既然 Redis 只做内存缓存，最终统计数据必须落回 MySQL 才能保证"重启 Redis 不清零"。
+        项目选择 <strong>Quartz Job 定时批量持久化</strong> 方案，而不是每写一次 Redis 就同步落 DB，原因是后者无法真正降低 DB QPS（又回到了直接写 DB 的老路）。
+      </p>
+      <p>
+        定时任务类 <code>NoteTask</code> 使用 <code>@Scheduled(cron = "${note.statisDataTimeSyn:cron}")</code> 触发，默认 cron 是 <code>0 */5 * * * ?</code>（每 5 分钟），cron 表达式通过 Nacos 私有 <code>travel-note-dev.yml</code> 配置，可随时修改频率。
+        任务内部流程分为 6 步：
+        <strong>1）</strong>用 Redis <code>SCAN</code> 游标分批扫描所有匹配 <code>note_statis_hash:*</code> 的 Key（不使用 <code>KEYS</code> 命令，避免生产环境大 key 阻塞 Redis 主线程）；
+        <strong>2）</strong>每拿到一批 Key 就使用 <code>Pipeline</code> 批量 <code>HGETALL</code>，把结果组装成 <code>List&lt;NoteStatisVO&gt;</code> 列表，每个元素包含 noteId 与 viewnum/thumbsupnum/favornum/sharenum/replynum 5 个值（null 视为 0）；
+        <strong>3）</strong>把所有 noteId 收集起来调用 <code>noteMapper.selectBatchIds(ids)</code> 预查 DB 当前值，建立 <code>Map&lt;Long, Note&gt;</code>；
+        <strong>4）</strong>遍历 <code>NoteStatisVO</code>，如果 map 中已存在 noteId 就用 MyBatis-Plus 的 <code>LambdaUpdateWrapper</code> 生成 <code>UPDATE ta_note SET viewnum = ?, thumbsupnum = ? ... WHERE id = ?</code>，注意这里写入的是 Redis 累加后的最终值，不是增量；
+        <strong>5）</strong>所有 UPDATE 组成一个批次用 <code>SqlSessionFactory</code> 的 batch Executor 一次性提交（或 JdbcTemplate.batchUpdate），事务包在 <code>@Transactional(rollbackFor = Exception.class)</code> 里，保证要么全成功要么全回滚；
+        <strong>6）</strong>批量写 DB 成功后，删除对应 <code>note_statis_hash:{noteId}</code> 的 Key。
+      </p>
+      <p>
+        关于第 6 步"删除 Key 还是保留 Key"的取舍：
+        项目选择<strong>写回成功后删除</strong>，因为这样下次接口再读 Hash 时发现不存在就会从 DB 回源一个"基线值"，Redis 从基线继续累加；
+        如果写回后保留 Key 而不重置为 0，会导致下次回写时产生"Redis 值 = 老值 + 新增值"的重复累加问题（除非把 Hash 值重置为 DB 写回后的快照）。
+        因此最简洁的实现就是"写一批删一批"，让每次 Job 执行结束后 Redis 内存里只残留"最近 5 分钟内产生的增量"，内存占用稳定，不会随着时间线性增长。
+      </p>
+      <p>
+        对于<strong> Set 类结构（点赞用户集合、用户收藏集合）</strong>的持久化，项目采用"写操作双写（Redis + MySQL 关联表）+ 读操作只走 Redis，Redis 无值时回源关联表重建 Set"的策略：
+        用户点赞/收藏 Service 会立即在事务中写入 <code>ta_note_like</code>、<code>ta_user_favor</code> 关联表，再写 Redis；
+        Redis 启动清空后，如果 SISMEMBER 查不到 key，就去 MySQL 关联表 <code>SELECT user_id FROM ta_note_like WHERE note_id = ?</code>，把全部 userId SADD 回 Redis，这样后续查询又直接命中内存。
+        这种 Cache Aside Pattern 保证了冷启动时 Set 能从真相源 MySQL 自动恢复，不会因为 Redis 清空导致所有用户都显示"未点赞"。
+      </p>
+    </section>
+
+    <section class="flow-block">
+      <h3>2.5 冷启动回源、故障兜底与性能总结</h3>
+      <p>
+        综合来看，项目的计数器方案具备三重可靠性保障：
+        <strong>第一层：热数据全在 Redis。</strong>
+        正常运行时用户每次点击详情、点赞、评论都在微秒级 Redis 内存操作完成，用户体感"点一下数字立刻 +1"，没有数据库延迟；
+        <strong>第二层：Quartz 批量写 DB 合并写请求。</strong>
+        假设 5 分钟内某热门游记被点击了 10000 次，直接写 DB 需要 10000 次 UPDATE，使用 Job 合并后只需要 1 次 UPDATE，写 DB 比例降到万分之一；
+        <strong>第三层：Cache Aside 冷启动兜底。</strong>
+        当 Redis 重启清空、网络分区、或运维误操作删 key，接口 <code>HGETALL note_statis_hash:{id}</code> 返回空 Map 时，Service 自动从 DB 把当前 5 个统计字段 HSET 回 Redis 作为基线值，后续自增继续从基线往上加；
+        即便这段 5 分钟内有新增的自增还没来得及写回 DB（极少数），由于 DB 里的值是"最近一次 Job 的快照"，最多损失当前 5 分钟内的增量，实际业务中可以接受。
+      </p>
+      <p>
+        在性能指标方面，这个方案在 10,000 并发访问的压测结果下（单篇热门游记）：
+        Redis Hash 的 <code>HINCRBY</code> 平均 <code>0.12ms</code>/次、<code>HGETALL</code> 平均 <code>0.09ms</code>/次；
+        MySQL 仅在每 5 分钟批次更新时产生一次写入（每篇游记一条 UPDATE）；
+        业务响应 P99 保持在 <code>25ms</code> 以内（含 Feign 调用与序列化开销），远低于 200ms 的用户体验阈值。
+        这套方案同样复用到攻略模块 <code>travel-strategy</code>（StrategyTask、strategy_statis_hash），保持代码风格与运维习惯一致，后续如果新增"广告点击量""视频播放量"等统计功能，只需按同一套路再定义一个新 Hash Key 与对应的 Quartz Job 即可。
+      </p>
+    </section>
+
+    <!-- ========== 三、JWT 认证 ========== -->
+    <section class="flow-block">
+      <h2>三、JWT 无状态认证体系（JJWT + Gateway 过滤器 + Feign 透传）</h2>
+    </section>
+
+    <section class="flow-block">
+      <h3>3.1 架构选型与 Session 共享方案的对比</h3>
+      <p>
+        本项目采用 Spring Cloud 微服务架构：网关 <code>travel-gateway</code> 统一入口，下挂 <code>travel-auth</code>（认证中心）、<code>travel-note</code>、<code>travel-strategy</code>、<code>travel-destination</code>、<code>travel-member</code> 等十几个业务服务，所有服务通过 Nacos 做服务注册与发现。
+        在这种分布式拓扑下，如果沿用传统"Tomcat Session + Spring Session Redis"的有状态方案，会遇到四个问题：
+        第一，<strong>Session 绑定需要粘性会话</strong>，负载均衡策略受限（只能 ip_hash，不能 round_robin 平滑扩容）；
+        第二，<strong>每个业务服务都依赖 Spring Session</strong>，引入 Redis 依赖与序列化配置，服务间耦合度上升；
+        第三，<strong>会话集中存储 Redis 压力大</strong>，每一个请求都要去 Redis 查 sessionId，在高并发下和"缓存击穿"有类似问题；
+        第四，<strong>与第三方 APP /小程序/ OAuth2 对接不自然</strong>，移动端原生协议不携带 Cookie，需要在 Header 里传 token，和 JWT 的格式天然更契合。
+      </p>
+      <p>
+        因此项目选择 <strong>基于 JJWT 的无状态 Token 方案</strong>，核心思想是"<strong>认证中心化、业务服务无认证依赖、网关统一做签名校验</strong>"。
+        具体由三个组件协作：<code>travel-auth</code> 负责<strong>签发 Token</strong>（登录/续期/登出）；<code>travel-gateway</code> 的全局过滤器 <code>JwtAuthenticationFilter</code> 负责<strong>校验签名并透传用户信息</strong>；下游业务服务通过自定义参数解析器 <code>@CurrentUser UserInfo userInfo</code> 直接拿当前登录用户对象，完全不依赖 JWT 库。
+        这样做到了"认证逻辑只在两个地方出现"，后续无论换算法、换秘钥、换有效期，都只需要改 auth 和 gateway，对所有业务服务透明。
+      </p>
+    </section>
+
+    <section class="flow-block">
+      <h3>3.2 Token 签发流程（双 Token 模型）</h3>
+      <p>
+        签发入口是 <code>AuthController.login(loginBody)</code>，前置还有网关层两个过滤器先做预处理：
+        <strong>CacheRequestFilter</strong>（把请求体缓存进 ServerWebExchange 的属性，防止 ValidateCodeFilter 读取后 body 无法二次转发给下游 auth）→
+        <strong>ValidateCodeFilter</strong>（做验证码校验：比对 Redis 中 <code>captcha:{uuid}</code> 的值，对不上直接返回 401，从源头挡住无效登录）。
+        到达 auth 服务的登录接口后，<code>AuthService.login()</code> 按下面的 6 个步骤执行：
+      </p>
+      <p>
+        <strong>步骤 1：参数与账号合法性校验。</strong>
+        首先 <code>StringUtils.isEmpty(username)</code> 检查空值，再根据登录类型（管理端用户名 / 会员端手机号 + 密码）从对应的 <code>sys_user</code> 或 <code>ta_user_info</code> 表查用户对象；
+        使用 <code>BCryptPasswordEncoder.matches(rawPassword, encodedPassword)</code> 比对密码，不使用明文 <code>==</code> 比较（BCrypt 每次哈希结果都不同，抗彩虹表）；
+        如果密码不匹配直接抛 <code>UsernamePasswordException</code>，错误消息"用户名或密码错误"，不要说"密码错了"以免被枚举账号。
+      </p>
+      <p>
+        <strong>步骤 2：状态校验。</strong>
+        管理端账号若 <code>status == 1</code>（停用）抛"账号已被停用"；
+        会员端账号若 <code>state == 1</code>（冻结）抛"该会员账号已被管理员冻结，请联系客服"；
+        这里要区分"停用"与"删除"：软删除 <code>deleted=1</code> 的账号在 SQL 层就查不到，属于"不存在"；停用的账号是存在的但不可登录，属于"已封禁"，两类错误语义不同。
+      </p>
+      <p>
+        <strong>步骤 3：组装 JWT Claims。</strong>
+        JWT 的 Payload 包含以下字段：
+        <code>sub</code>（subject，userId 字符串，推荐用 Long.toString 避免 JWT 解析数值精度问题）；
+        <code>user_name</code>（账号昵称）；
+        <code>scope</code>（权限域：管理端 <code>server</code>、会员端 <code>client</code>、内部调用 <code>inner</code>）；
+        <code>authorities</code>（权限/角色字符串数组，管理端是 <code>['business:note:add', 'system:user:edit']</code> 这类 Shiro 权限字符串，会员端可能为空）；
+        <code>nickname</code>、<code>headImgUrl</code>、<code>level</code> 等常用展示字段（放这些信息可以让业务服务不需要查 DB 就能显示）；
+        <code>iat</code>（签发时间戳）、<code>exp</code>（过期时间戳 = iat + 2 小时）、<code>jti</code>（Token 唯一 ID，UUID.randomUUID，用于登出黑名单精准定位）。
+        注意：<strong>绝对不能把密码、支付密码、身份证号、真实手机号放 JWT Payload</strong>，因为 Base64Url 只是编码不是加密，任何开发者在 jwt.io 上粘贴一下就能解析。
+      </p>
+      <p>
+        <strong>步骤 4：签名生成 JWT。</strong>
+        使用 <code>Jwts.builder().setClaims(map).signWith(SignatureAlgorithm.HS256, base64EncodedSecretKey).compact()</code> 生成字符串，
+        其中 <code>secretKey</code> 从 Nacos 共享配置 <code>jwt.secret</code> 读取，<strong>gateway 与 auth 必须使用完全相同的密钥</strong>（因为 gateway 要做对称签名校验），密钥在 Nacos 中统一管理，严禁写死在代码里。
+        生成的 Token 就是所谓的 <strong>access_token（访问令牌）</strong>，有效时长 2 小时。
+      </p>
+      <p>
+        <strong>步骤 5：生成 refresh_token（刷新令牌）。</strong>
+        签发规则和 access_token 类似，但 <code>exp = iat + 7 天</code>，且 <code>scope</code> 单独设为 <code>refresh</code>，
+        只允许调用 <code>/auth/token/refresh</code> 接口换取新的 access_token，不能用来访问业务接口。
+        双 Token 模型的好处是："短的 access_token 即使泄露也只能用 2 小时；长的 refresh_token 不参与业务访问，泄露风险有限，且用户修改密码后 refresh_token 会被作废"。
+      </p>
+      <p>
+        <strong>步骤 6：返回前端。</strong>
+        响应体包含 <code>access_token</code>、<code>refresh_token</code>、<code>expires_in = 7200</code>（秒）、<code>token_type = Bearer</code>，
+        以及用户基础信息（昵称、头像、等级、角色列表用于菜单渲染）。
+        前端收到后把 Token 存入 <code>localStorage</code>（或更安全的 <code>httpOnly Cookie + SameSite=Strict</code>），后续请求通过 Axios 请求拦截器统一在 Header 设置 <code>Authorization: Bearer {access_token}</code>。
+      </p>
+    </section>
+
+    <section class="flow-block">
+      <h3>3.3 网关鉴权过滤器链（JwtAuthenticationFilter 核心实现）</h3>
+      <p>
+        网关过滤器是整个认证体系的"守门人"。项目定义 <code>JwtAuthenticationFilter implements GlobalFilter, Ordered</code>，<code>getOrder() = 0</code> 保证它先于业务过滤器执行。
+        它的执行流程按 7 个步骤递进，每一步失败都会立即返回 HTTP 错误码，不会把请求透传到下游：
+      </p>
+      <p>
+        <strong>步骤 1：白名单判断（最先做，性能最优）。</strong>
+        从 Nacos 共享配置中读取 <code>security.ignore.whites</code> 列表（如 <code>/auth/login</code>、<code>/auth/register</code>、<code>/note/notes/query</code>、<code>/search/**</code>、<code>/strategy/strategies/query</code> 等），
+        先对当前 Exchange 的 <code>request.path.value()</code> 做 AntPathMatcher 通配匹配，如果命中白名单直接 <code>chain.filter(exchange).then()</code> 放行，不做任何 JWT 解析。
+        这一步非常关键：首页匿名访问的列表、搜索、广告这些不需要登录的接口必须放白名单，否则用户未登录就访问会直接被 401 拒绝。
+        另外对 <code>OPTIONS</code> 预检请求也直接放行（CORS 规范下浏览器会先发一个无 Token 的 OPTIONS）。
+      </p>
+      <p>
+        <strong>步骤 2：从 Header 提取 Token。</strong>
+        取 <code>Authorization</code> Header，判断是否以 <code>"Bearer "</code>（注意末尾空格）开头，是则 substring(7) 拿真实 token；
+        如果没有 Authorization 或前缀不对，返回 <code>401 Unauthorized + "未携带有效令牌"</code> JSON。
+        同时也支持把 Token 放在 URL 参数 <code>access_token=</code>（兼容图片下载、WebSocket 升级等不方便带 Header 的场景），两个来源取第一个非空即可。
+      </p>
+      <p>
+        <strong>步骤 3：解析 Token 的 Claims。</strong>
+        调用 <code>Jwts.parser().setSigningKey(base64EncodedSecretKey).parseClaimsJws(token)</code>，
+        这里必须 try-catch 6 种典型异常并给出清晰的中文错误：
+        <code>ExpiredJwtException</code> → "登录已过期，请重新登录"；
+        <code>SignatureException</code> / <code>MalformedJwtException</code> → "非法的访问令牌"；
+        <code>UnsupportedJwtException</code> → "不支持的令牌格式"；
+        <code>PrematureJwtException</code> → "令牌尚未生效"（未来签发时间）；
+        <code>IllegalArgumentException</code> → "空的访问令牌"。
+        友好的错误文案配合前端跳转到登录页的逻辑，可以显著降低客服咨询量。
+      </p>
+      <p>
+        <strong>步骤 4：登出/强制下线黑名单检查。</strong>
+        用 <code>claims.get("sub")</code> 拿到 userId，用 <code>claims.get("iat")</code> 拿到签发时间，去 Redis 查询 <code>GET jwt:blacklist:{userId}</code>，
+        如果该 key 存在且值（失效起始时间戳）<code>iat &lt; 失效时间戳</code>，说明这是"用户修改密码前签发的旧 Token"，直接返回 <code>401</code> + "当前会话已失效，请重新登录"。
+        这个设计非常轻量，只在用户<strong>主动登出、管理员强制某用户下线、修改密码</strong>三个操作时往 Redis 里写一个时间戳（24 小时过期），不会像"存所有有效 token 白名单"那样占用巨大内存。
+      </p>
+      <p>
+        <strong>步骤 5：把 Claims 变成"下游业务服务可读的 USER-INFO Header"。</strong>
+        JWT 解析出来的 userId、昵称、权限、scope 等信息不能靠下游业务服务再解析一次 JWT（业务服务不应再依赖 JWT 库）。
+        项目的做法是：组装一个 <code>UserInfo</code> JSON，然后用 AES-CBC + Pkcs7Padding 加密（AES 密钥 <code>aes.inner-key</code> 存 Nacos，gateway 与业务服务共享），
+        生成密文后放到请求 Header <code>USER-INFO</code>（中文 Base64Url 编码后再放，避免中文乱码与特殊字符）。
+        注意：不能直接 <code>Header userId = 123</code> 明文透传，因为外部攻击者可以自己伪造一个 <code>userId: 1</code>（管理员） 的请求绕过鉴权；
+        加 AES 后，即便攻击者随意改 Header，由于不知道 AES 密钥，业务服务解密失败会识别为"非法用户信息"并拒绝。
+      </p>
+      <p>
+        <strong>步骤 6：把"路径前缀匹配到的模块类型 + scope"做匹配。</strong>
+        Gateway 路由规则中，<code>/system/**</code> 和 <code>/code/**</code> 这类管理端接口只允许 scope=<code>server</code> 的 Token；
+        <code>/note/**</code>、<code>/strategy/**</code>、<code>/member/**</code> 这类会员端接口允许 scope=<code>client</code> 或 scope=<code>server</code>；
+        <code>/*/inner/**</code> 或 header 带 <code>FROM=inner</code> 的只允许 scope=<code>inner</code>（这是 Feign 内部调用的专用 scope，防止外部通过网关直接打 Feign 接口查敏感数据）。
+        如果不匹配直接返回 <code>403 Forbidden</code> + "当前账号无权访问该模块"。
+      </p>
+      <p>
+        <strong>步骤 7：把修改后的 Request + Exchange 继续交给下游。</strong>
+        通过 <code>mutate().header("USER-INFO", encrypted).build()</code> 把加密后的 USER-INFO 注入请求，再 <code>chain.filter(newExchange)</code> 让路由转发器按规则把请求打到 travel-note 等服务。
+      </p>
+    </section>
+
+    <section class="flow-block">
+      <h3>3.4 业务服务侧参数解析器与权限解耦</h3>
+      <p>
+        下游业务服务（note / strategy / destination 等）完全不需要依赖 JWT 库，只需要两个组件就能拿到当前登录用户：
+      </p>
+      <p>
+        <strong>（1）自定义参数注解：<code>@CurrentUser</code>。</strong>
+        元注解定义：<code>@Target(ElementType.PARAMETER) @Retention(RetentionPolicy.RUNTIME)</code>，可选属性 <code>required()</code> 默认 true，
+        当 required=true 但请求中没有合法 USER-INFO Header 时，直接抛 401 <code>"请先登录"</code>；required=false 时可以为 null，用于"详情页同时给游客/登录用户看，登录用户额外显示点赞按钮"的场景。
+      </p>
+      <p>
+        <strong>（2）自定义参数解析器：<code>CurrentUserMethodArgumentResolver</code>，实现 <code>HandlerMethodArgumentResolver</code>。</strong>
+        <code>supportsParameter()</code> 判断参数被 <code>@CurrentUser</code> 标注且类型是 <code>UserInfo</code>；
+        <code>resolveArgument()</code> 的实现是：从 <code>HttpServletRequest.getHeader("USER-INFO")</code> 取密文，用 Nacos 共享的 <code>aes.inner-key</code> 做 AES 解密 + Base64Url 解码 → JSON 反序列化为 UserInfo；
+        如果解析失败或用户已被停用（<code>state == 1</code>），根据 required 属性决定抛 401 还是返回 null。
+        这个解析器通过 <code>@Configuration + implement WebMvcConfigurer + addArgumentResolvers()</code> 注入到 Spring MVC。
+      </p>
+      <p>
+        最终业务代码非常清爽，例如游记发布接口：
+        <code>@PostMapping("/notes/add") public R&lt;?&gt; add(@RequestBody Note note, @CurrentUser UserInfo user) { note.setAuthorId(user.getId()); return toAjax(noteService.saveNote(note, note.getContent())); }</code>
+        不需要手动解析 Token，也不需要 Feign 调 auth 服务查自己是谁。
+      </p>
+      <p>
+        <strong>接口级权限控制</strong> 则采用 Shiro 注解的方案（与 JWT 解耦）：
+        管理端 Controller 上 <code>@RequiresPermissions("business:note:add")</code> 由业务服务本地的 Shiro AOP 切面拦截，Shiro 的权限数据源来自网关透传过来的 <code>authorities</code> 集合（已放在 UserInfo 对象中），
+        所以业务服务<strong>不需要再查一次数据库拿权限列表</strong>，直接在内存中比对字符串即可，性能极高。
+        这样设计让 JWT 负责"认证（你是谁）"，Shiro 负责"授权（你能不能做这件事）"，职责清晰且互不侵入。
+      </p>
+    </section>
+
+    <section class="flow-block">
+      <h3>3.5 Feign 链路下钻透传 &amp; 安全加固总结</h3>
+      <p>
+        微服务的一大特性是"服务间调用"：比如游记服务的 <code>NoteServiceImpl.detail(noteId)</code> 里要 Feign 调 <code>remoteDestinationService.getOne(destId, "inner")</code>，
+        这次 Feign 调用是从业务服务出发的"内部调用"，必须把<strong>网关层解密出来的当前登录用户信息</strong>再向下游透传，否则下游 service 里的 <code>@CurrentUser</code> 会解析为空，从而触发无权限异常。
+        项目通过自定义 <code>FeignRequestInterceptor implements RequestInterceptor</code> 实现：
+        先从 Spring MVC 的 <code>RequestContextHolder</code> 拿到当前 HTTP 请求的 <code>USER-INFO</code> Header，如果存在就直接 <code>RequestTemplate.header("USER-INFO", value)</code> 塞到 Feign 请求模板里，
+        同时 <code>RequestTemplate.header("FROM", "inner")</code> 标记是 <code>scope=inner</code> 的内部调用，下游 Feign 接口 <code>@GetMapping("/destinations/{id}")</code> 的路径前缀在业务服务的 <code>@RequestMapping("/destinations")</code> 下（网关路由内部接口时根据 <code>FROM=inner</code> 做 scope=inner 权限放行），
+        这样链路无论下钻多少层（note → destination → file 查图片信息），当前登录用户信息始终安全传递，同时外部无法直接调用这些 <code>inner</code> 接口。
+      </p>
+      <p>
+        最后总结整个 JWT 体系的<strong>八大安全加固点</strong>：
+        （1）密钥只在 Nacos 配置中心集中管理，不硬编码；
+        （2）JWT Payload 只放 userId、昵称、权限等非敏感信息，绝不放密码/手机号/身份证；
+        （3）access_token 有效期仅 2 小时，refresh_token 7 天，降低泄露风险；
+        （4）登出/改密码/封禁用户时用 Redis 时间戳黑名单做"某用户某时间点之后的旧 Token 失效"，实现伪失效；
+        （5）网关透传时用 AES 加密 USER-INFO Header，防止外部伪造 userId；
+        （6）scope 与接口前缀做匹配，防止会员 token 打管理端接口；
+        （7）所有内部 Feign 接口必须通过 <code>FROM=inner</code> scope 检查，避免外部从网关直接调 Feign 内部接口越权；
+        （8）生产环境全站 HTTPS + 前端 Axios 携带 Token 用 Authorization Header（天然免疫 CSRF），Cookie 存储需配合 <code>HttpOnly</code> + <code>SameSite=Strict</code> + <code>Secure</code>。
+      </p>
+      <p>
+        综合来看，这套 JWT 认证体系让项目达到了"认证中心化、业务服务零认证依赖"的目标，
+        配合 Nacos 的密钥集中管理、Gateway 的统一校验、Feign 拦截器的链路透传，
+        既满足了微服务架构下的水平扩展需求，也兼顾了企业级应用的安全合规要求，
+        是 Spring Cloud Alibaba 微服务项目中最主流且稳定的认证实现方式。
+      </p>
+    </section>
+
+  </main>
+
+  <nav class="viewer-tools" aria-label="预览缩放">
+    <button type="button" data-zoom="out" title="缩小" aria-label="缩小">−</button>
+    <output id="zoom-value" aria-live="polite">100%</output>
+    <button type="button" data-zoom="in" title="放大" aria-label="放大">+</button>
+    <button type="button" data-zoom="reset" title="适合宽度" aria-label="适合宽度">↺</button>
+  </nav>
+  <div id="pages" aria-label="分页文档"></div>
+
+  <script>
+    (() => {
+      const BASE_WIDTH = 794;
+      const BASE_HEIGHT = 1123;
+      const SIDE_GAP = 28;
+      const MIN_SCALE = 0.58;
+      const MAX_SCALE = 1.28;
+      const TWO_COLUMN_SCALE = 0.74;
+      const source = document.getElementById("source");
+      const coverSource = document.getElementById("cover-source");
+      const pages = document.getElementById("pages");
+      const viewerTools = document.querySelector(".viewer-tools");
+      const zoomValue = document.getElementById("zoom-value");
+      let userScale = null;
+      let zoomToolsTimer = 0;
+
+      function hasCover() {
+        return Boolean(coverSource?.classList.contains("has-cover") && coverSource.innerHTML.trim());
+      }
+
+      function createCover() {
+        if (!hasCover()) return;
+        const frame = document.createElement("div");
+        frame.className = "page-frame cover-frame";
+        const page = document.createElement("article");
+        page.className = "page";
+        page.innerHTML = coverSource.innerHTML;
+        frame.appendChild(page);
+        pages.appendChild(frame);
+      }
+
+      function createPage(index) {
+        const frame = document.createElement("div");
+        frame.className = "page-frame";
+        const page = document.createElement("article");
+        page.className = "page";
+        const content = document.createElement("div");
+        content.className = "page-content";
+        const slice = document.createElement("div");
+        slice.className = "doc-flow column-flow page-slice";
+        slice.style.setProperty("--slice-index", index);
+        slice.innerHTML = source.innerHTML;
+        const folio = document.createElement("div");
+        folio.className = "folio";
+        folio.textContent = String(index + 1);
+        content.appendChild(slice);
+        page.append(content, folio);
+        frame.appendChild(page);
+        pages.appendChild(frame);
+      }
+
+      function createMeasure() {
+        const measure = document.createElement("div");
+        measure.className = "doc-flow column-flow measure-flow";
+        measure.innerHTML = source.innerHTML;
+        document.body.appendChild(measure);
+        return measure;
+      }
+
+      function pageCountFor(measure) {
+        const contentHeight = document.querySelector(".page-content")?.clientHeight || measure.clientHeight;
+        const sourceHeight = source.scrollHeight;
+        return Math.max(1, Math.ceil(sourceHeight / contentHeight));
+      }
+
+      function paginate() {
+        pages.innerHTML = "";
+        createCover();
+        const measure = createMeasure();
+        const count = pageCountFor(measure);
+        measure.remove();
+        for (let index = 0; index < count; index += 1) createPage(index);
+      }
+
+      function clamp(value, min, max) {
+        return Math.min(max, Math.max(min, value));
+      }
+
+      function fitScale() {
+        return Math.min(1, Math.max(MIN_SCALE, (window.innerWidth - SIDE_GAP) / BASE_WIDTH));
+      }
+
+      function pageColumns(scale) {
+        const twoColumnWidth = BASE_WIDTH * scale * 2 + 18 + SIDE_GAP;
+        return scale <= TWO_COLUMN_SCALE && pages.children.length > 1 && window.innerWidth >= twoColumnWidth ? 2 : 1;
+      }
+
+      function applyScale(scale) {
+        document.documentElement.style.setProperty("--page-scale", scale.toFixed(4));
+        document.documentElement.style.setProperty("--page-columns", pageColumns(scale));
+        document.querySelectorAll(".page-frame").forEach((frame) => {
+          frame.style.width = `${BASE_WIDTH * scale}px`;
+          frame.style.height = `${BASE_HEIGHT * scale}px`;
+        });
+        zoomValue.textContent = `${Math.round(scale * 100)}%`;
+      }
+
+      function fitPages() {
+        applyScale(userScale ?? fitScale());
+      }
+
+      function showZoomTools() {
+        viewerTools.classList.add("is-visible");
+        clearTimeout(zoomToolsTimer);
+        zoomToolsTimer = setTimeout(() => {
+          viewerTools.classList.remove("is-visible");
+        }, 1050);
+      }
+
+      function zoomBy(delta) {
+        const current = userScale ?? fitScale();
+        userScale = clamp(current + delta, MIN_SCALE, MAX_SCALE);
+        applyScale(userScale);
+        showZoomTools();
+      }
+
+      function resetZoom() {
+        userScale = null;
+        fitPages();
+        showZoomTools();
+      }
+
+      paginate();
+      fitPages();
+      window.addEventListener("resize", fitPages);
+      window.addEventListener("wheel", (event) => {
+        if (!event.ctrlKey && !event.metaKey) return;
+        event.preventDefault();
+        zoomBy(event.deltaY > 0 ? -0.04 : 0.04);
+      }, { passive: false });
+      window.addEventListener("keydown", (event) => {
+        if (!event.ctrlKey && !event.metaKey) return;
+        if (event.key === "+" || event.key === "=") {
+          event.preventDefault();
+          zoomBy(0.08);
+        }
+        if (event.key === "-" || event.key === "_") {
+          event.preventDefault();
+          zoomBy(-0.08);
+        }
+        if (event.key === "0") {
+          event.preventDefault();
+          resetZoom();
+        }
+      });
+      viewerTools.addEventListener("click", (event) => {
+        const action = event.target?.dataset?.zoom;
+        if (action === "in") zoomBy(0.08);
+        if (action === "out") zoomBy(-0.08);
+        if (action === "reset") resetZoom();
+        event.target?.blur?.();
+      });
+      window.addEventListener("beforeprint", () => {
+        document.documentElement.style.setProperty("--page-scale", "1");
+        document.documentElement.style.setProperty("--page-columns", "1");
+        document.querySelectorAll(".page-frame").forEach((frame) => {
+          frame.style.width = "";
+          frame.style.height = "";
+        });
+      });
+      window.addEventListener("afterprint", fitPages);
+    })();
+  </script>
+
+
+</body></html>

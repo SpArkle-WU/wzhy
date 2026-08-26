@@ -6,6 +6,7 @@ import cn.wolfcode.wolf2w.business.api.RemoteRegionService;
 import cn.wolfcode.wolf2w.business.query.NoteQuery;
 import cn.wolfcode.wolf2w.business.service.INoteService;
 import cn.wolfcode.wolf2w.common.core.domain.R;
+import cn.wolfcode.wolf2w.common.security.annotation.RequiresLogin;
 import cn.wolfcode.wolf2w.common.security.utils.SecurityUtils;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -35,16 +36,12 @@ public class TravelsAliasController {
      * 我的游记——前端 GET /note/travels/user/query
      * 返回当前登录用户发布的游记（分页，走 NoteQuery + authorId 注入）
      */
+    @RequiresLogin
     @GetMapping("/travels/user/query")
     public R<IPage<Note>> myTravels(NoteQuery qo) {
-        Long currentUserId = null;
-        try {
-            currentUserId = SecurityUtils.getUserId();
-        } catch (Exception ignored) {
-        }
-        if (qo.getAuthorId() == null && currentUserId != null) {
-            qo.setAuthorId(currentUserId);
-        }
+        // 强制使用当前用户，避免通过 authorId/admin 查询到其他用户的草稿。
+        qo.setAuthorId(SecurityUtils.getUserId());
+        qo.setAdmin(true);
         IPage<Note> page = noteService.queryPage(qo);
         return R.ok(page);
     }

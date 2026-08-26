@@ -49,6 +49,12 @@ public class RedisService
         redisTemplate.opsForValue().set(key, value, timeout, timeUnit);
     }
 
+    // Zset缓存
+    public <T> void setCacheZSet(final String key, final T value, final Long time)
+    {
+        redisTemplate.opsForZSet().add(key, value, time);
+    }
+
     /**
      * 设置有效时间
      *
@@ -182,6 +188,11 @@ public class RedisService
         return redisTemplate.opsForSet().members(key);
     }
 
+
+    public <T> Set<T> rangeByScore(final String key, final Double min, final Double max)
+    {
+        return redisTemplate.opsForZSet().rangeByScore(key, min, max);
+    }
     /**
      * 缓存Map
      *
@@ -304,6 +315,10 @@ public class RedisService
         return redisTemplate.opsForSet().remove(key, value);
     }
 
+
+    public <T> Long deleteCacheZSetValue(final String key, final T value){
+        return redisTemplate.opsForZSet().remove(key, value);
+    }
     /**
      * 往缓存set中添加value值
      * @param key

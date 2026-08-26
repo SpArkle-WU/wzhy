@@ -2,6 +2,7 @@ package cn.wolfcode.wolf2w.member.api.domain;
 
 import java.util.Date;
 import com.fasterxml.jackson.annotation.JsonFormat;
+import lombok.Data;
 import org.apache.commons.lang3.builder.ToStringBuilder;
 import org.apache.commons.lang3.builder.ToStringStyle;
 import cn.wolfcode.wolf2w.common.core.annotation.Excel;
@@ -19,9 +20,7 @@ import java.io.Serializable;
  * @author dafei
  * @date 2023-06-18
  */
-@Setter
-@Getter
-@Accessors(chain = true)
+@Data
 @TableName("ta_user_info")
 public class UserInfo implements Serializable {
     private static final long serialVersionUID = 1L;

@@ -7,6 +7,7 @@ import cn.wolfcode.wolf2w.business.service.IStrategyESService;
 import cn.wolfcode.wolf2w.common.core.domain.R;
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch._types.Refresh;
+import co.elastic.clients.elasticsearch._types.mapping.DenseVectorSimilarity;
 import co.elastic.clients.elasticsearch.core.BulkRequest;
 import co.elastic.clients.elasticsearch.core.BulkResponse;
 import co.elastic.clients.elasticsearch.indices.CreateIndexRequest;
@@ -55,10 +56,11 @@ public class StrategyESServiceImpl implements IStrategyESService {
         CreateIndexRequest request = CreateIndexRequest.of(r -> r.index(INDEX_NAME)
                 .settings(s -> s.numberOfShards("1").numberOfReplicas("1"))
                 .mappings(m -> m.properties("id", p -> p.long_(l -> l))
-                        .properties("title", p -> p.text(t -> t.analyzer("ik_max_word")))
-                        .properties("subTitle", p -> p.text(t -> t.analyzer("ik_max_word")))
-                        .properties("summary", p -> p.text(t -> t.analyzer("ik_max_word")))
-                ));
+                .properties("title", p -> p.text(t -> t.analyzer("ik_max_word")))
+                .properties("subTitle", p -> p.text(t -> t.analyzer("ik_max_word")))
+                .properties("summary", p -> p.text(t -> t.analyzer("ik_max_word")))
+                .properties("contentVector", p -> p.denseVector(d -> d.dims(1024).similarity(DenseVectorSimilarity.valueOf("cosine"))))
+        ));
         // 创建索引
         client.indices().create(request);
 

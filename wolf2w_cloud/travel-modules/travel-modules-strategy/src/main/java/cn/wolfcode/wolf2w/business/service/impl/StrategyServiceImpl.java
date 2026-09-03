@@ -28,6 +28,8 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.*;
 import java.util.concurrent.TimeUnit;
@@ -342,13 +344,16 @@ public class StrategyServiceImpl extends ServiceImpl<StrategyMapper, Strategy> i
         strategyContent.setContent(content);
         int ret = strategyContentMapper.insert(strategyContent);
 
-        // 11. 发送消息到队列
+        // Canal 会在数据库提交后发布变更。保留旧消息通道作为兼容路径，但必须等事务提交成功。
         String message = JSON.toJSONString(strategy);
-
-        // 12.存储到Redis缓存中
         String key = RedisKeys.STRATEGY_RABBITMQ_ZSET.getPrefix();
-        redisService.setCacheZSet(key,message,System.currentTimeMillis());
-        amqpTemplate.convertAndSend(RabbitConfig.EXCHANGE_NAME, RabbitConfig.ROUTING_KEY, message);
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                redisService.setCacheZSet(key, message, System.currentTimeMillis());
+                amqpTemplate.convertAndSend(RabbitConfig.EXCHANGE_NAME, RabbitConfig.ROUTING_KEY, message);
+            }
+        });
 
         return ret;
     }
@@ -482,15 +487,15 @@ public class StrategyServiceImpl extends ServiceImpl<StrategyMapper, Strategy> i
        // 当前时间戳 - 1分钟
        double time = System.currentTimeMillis() - 60000;
        // 从Redis中获取所有时间戳小于等于time的消息
-       Set<String> set = redisService.rangeByScore(key, time, time);
+       Set<String> set = redisService.rangeByScore(key, 0D, time);
        if (set.isEmpty()) {
            return;
        }
        for (String message : set) {
            // 处理消息 -- 补发消息到RabbitMQ队列,一直等待确认,直到消息被成功消费,到达预设次数后还未被消费进入死信队列
            amqpTemplate.convertAndSend(RabbitConfig.QUEUE_NAME, message);
-           // 清空缓存中已处理的消息
-           redisService.deleteCacheZSetValue(key, message);
+            // 消费端成功处理后会删除记录；这里更新时间，避免发送成功但消费尚未完成时反复补发。
+            redisService.setCacheZSet(key, message, System.currentTimeMillis());
        }
     }
 

@@ -92,6 +92,8 @@ const navList = reactive([{
 }, {
   name: '问答', url: '/questions'
 }, {
+  name: 'AI 问答', url: '/ai-assistant'
+}, {
   name: '机票', url: '/ticket'
 }, {
   name: '订酒店', url: '/hotel'
@@ -117,11 +119,10 @@ onMounted(() => {
   }, 20);
 
 
-  navList.forEach((ele, ide) => {
-    if (useRoute().path.startsWith(ele.url)) {
-      navIde.value = ide;
-    }
-  });
+  const currentPath = useRoute().path;
+  navIde.value = navList.findIndex((item) =>
+    item.url === '/' ? currentPath === '/' : currentPath.startsWith(item.url)
+  );
 })
 
 const signOutBtnClick = () => {
@@ -142,7 +143,7 @@ const signOutBtnClick = () => {
     display: flex;
     align-items: center;
     position: relative;
-    width: 1200px;
+    width: min(1200px, calc(100% - 32px));
     height: 68px;
     margin: 0 auto;
     overflow: hidden;
@@ -166,8 +167,15 @@ const signOutBtnClick = () => {
 
     .header-nav {
       flex: 1;
+      min-width: 0;
       display: flex;
       padding: 0px 25px;
+      overflow-x: auto;
+      scrollbar-width: none;
+
+      &::-webkit-scrollbar {
+        display: none;
+      }
 
       .nav-item {
         flex: 0 0 auto;
@@ -240,6 +248,64 @@ const signOutBtnClick = () => {
     background-color: rgba(0, 0, 0, 0.06);
     filter: progid:DXImageTransform.Microsoft.gradient(enabled='true', startColorstr='#11000000', endColorstr='#11000000');
     overflow: hidden;
+  }
+}
+
+@media (max-width: 1080px) {
+  .header-container .header-wrap {
+    .header-logo {
+      width: 116px;
+    }
+
+    .header-nav {
+      padding: 0 8px;
+
+      .nav-item {
+        padding: 0 10px;
+        font-size: 14px;
+      }
+    }
+
+    .header-login .split {
+      margin: 0 6px;
+    }
+  }
+}
+
+@media (max-width: 760px) {
+  .header-container,
+  .header-container .header-wrap {
+    height: 60px;
+  }
+
+  .header-container .header-wrap {
+    width: calc(100% - 24px);
+
+    .header-logo {
+      width: 92px;
+    }
+
+    .header-nav {
+      padding: 0 4px;
+
+      .nav-item {
+        padding: 0 9px;
+        font-size: 13px;
+        line-height: 60px;
+
+        &:hover {
+          height: 60px;
+        }
+      }
+    }
+
+    .header-login {
+      white-space: nowrap;
+
+      a {
+        font-size: 12px;
+      }
+    }
   }
 }
 

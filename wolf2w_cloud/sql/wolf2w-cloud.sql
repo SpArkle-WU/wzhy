@@ -619,11 +619,11 @@ CREATE TABLE `sys_job` (
 INSERT INTO `sys_job` VALUES ('1', '系统默认（无参）', 'DEFAULT', 'ryTask.ryNoParams', '0/10 * * * * ?', '3', '1', '1', 'admin', '2023-05-10 23:11:28', 'admin', '2024-07-29 11:41:32', '');
 INSERT INTO `sys_job` VALUES ('2', '系统默认（有参）', 'DEFAULT', 'ryTask.ryParams(\'ry\')', '0/15 * * * * ?', '3', '1', '1', 'admin', '2023-05-10 23:11:28', '', null, '');
 INSERT INTO `sys_job` VALUES ('3', '系统默认（多参）', 'DEFAULT', 'ryTask.ryMultipleParams(\'ry\', true, 2000L, 316.50D, 100)', '0/20 * * * * ?', '3', '1', '1', 'admin', '2023-05-10 23:11:28', '', null, '');
-INSERT INTO `sys_job` VALUES ('104', 'travel测试任务', 'DEFAULT', 'travelJob.test', '0/10 * * * * ?', '1', '1', '1', 'admin', '2024-07-29 11:47:55', '', '2024-07-29 11:51:05', '');
-INSERT INTO `sys_job` VALUES ('105', '排行榜统计任务', 'DEFAULT', 'travelJob.rankStatisJob', '0/20 * * * * ?', '1', '1', '1', 'admin', '2024-07-29 14:51:47', '', '2024-08-02 16:00:37', '');
-INSERT INTO `sys_job` VALUES ('106', 'conditon统计任务', 'DEFAULT', 'travelJob.conditionStatisJob', '0/10 * * * * ?', '1', '1', '1', 'admin', '2024-07-29 16:18:33', '', '2024-07-30 08:46:11', '');
-INSERT INTO `sys_job` VALUES ('108', 'redis statis persistence job', 'DEFAULT', 'redisJob.statisHashDataJob', '0/15 * * * * ?', '1', '1', '1', 'admin', '2024-07-30 14:29:05', 'admin', '2024-07-30 16:11:24', '');
-INSERT INTO `sys_job` VALUES ('109', 'es数据同步', 'DEFAULT', 'messageJob.esDataJob', '0/10 * * * * ?', '1', '1', '1', 'admin', '2024-08-12 11:30:23', '', '2024-08-12 11:43:16', '');
+INSERT INTO `sys_job` VALUES ('104', 'travel测试任务', 'DEFAULT', 'testTask.test(1, ''canal-test'')', '0/10 * * * * ?', '1', '1', '1', 'admin', '2024-07-29 11:47:55', '', '2024-07-29 11:51:05', '');
+INSERT INTO `sys_job` VALUES ('105', '排行榜统计任务', 'DEFAULT', 'strategyTask.statisRank', '0/20 * * * * ?', '1', '1', '1', 'admin', '2024-07-29 14:51:47', '', '2024-08-02 16:00:37', '');
+INSERT INTO `sys_job` VALUES ('106', 'condition统计任务', 'DEFAULT', 'strategyTask.statisCondition', '0/10 * * * * ?', '1', '1', '1', 'admin', '2024-07-29 16:18:33', '', '2024-07-30 08:46:11', '');
+INSERT INTO `sys_job` VALUES ('108', 'redis statis persistence job', 'DEFAULT', 'strategyTask.statisHashMapPersist', '0/15 * * * * ?', '1', '1', '1', 'admin', '2024-07-30 14:29:05', 'admin', '2024-07-30 16:11:24', '');
+INSERT INTO `sys_job` VALUES ('109', 'RabbitMQ消息补偿任务', 'DEFAULT', 'strategyTask.checkRabbitMQMessage', '0/10 * * * * ?', '1', '1', '1', 'admin', '2024-08-12 11:30:23', '', '2024-08-12 11:43:16', '');
 
 -- ----------------------------
 -- Table structure for sys_job_log

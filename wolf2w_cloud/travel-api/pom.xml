@@ -15,6 +15,7 @@
         <module>travel-api-note</module>
         <module>travel-api-adv</module>
         <module>travel-api-search</module>
+        <module>travel-api-canal</module>
     </modules>
 
     <artifactId>travel-api</artifactId>

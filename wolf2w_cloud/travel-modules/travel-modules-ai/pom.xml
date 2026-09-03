@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>cn.wolfcode.wolf2w</groupId>
+        <artifactId>travel-modules</artifactId>
+        <version>3.6.2</version>
+    </parent>
+
+    <artifactId>travel-modules-ai</artifactId>
+
+    <properties>
+        <maven.compiler.source>17</maven.compiler.source>
+        <maven.compiler.target>17</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    </properties>
+
+    <dependencies>
+        <!-- Nacos 配置中心，bootstrap.yml 才能拉取 travel-ai-dev.yml -->
+        <dependency>
+            <groupId>com.alibaba.cloud</groupId>
+            <artifactId>spring-cloud-starter-alibaba-nacos-config</artifactId>
+        </dependency>
+
+        <!-- 项目统一安全和 Feign 配置 -->
+        <dependency>
+            <groupId>cn.wolfcode.wolf2w</groupId>
+            <artifactId>travel-common-security</artifactId>
+            <version>3.6.2</version>
+        </dependency>
+
+        <!-- 项目统一 Redis 封装 -->
+        <dependency>
+            <groupId>cn.wolfcode.wolf2w</groupId>
+            <artifactId>travel-common-redis</artifactId>
+            <version>3.6.2</version>
+        </dependency>
+
+        <!-- 项目统一 RabbitMQ 配置 -->
+        <dependency>
+            <groupId>cn.wolfcode.wolf2w</groupId>
+            <artifactId>travel-common-rabbit</artifactId>
+            <version>3.6.2</version>
+        </dependency>
+        <!-- web依赖 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <!-- nacos依赖 -->
+        <dependency>
+            <groupId>com.alibaba.cloud</groupId>
+            <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
+        </dependency>
+        <!--feign依赖-->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-openfeign</artifactId>
+        </dependency>
+        <!--安全组件依赖-->
+        <!--<dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>-->
+        <!--redis依赖-->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+        <!--rabbitmq依赖-->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-amqp</artifactId>
+        </dependency>
+        <!--自己封装elasticsearch依赖,解决与Spring Boot版本冲突-->
+        <dependency>
+            <groupId>org.elasticsearch.client</groupId>
+            <artifactId>elasticsearch-rest-client</artifactId>
+            <version>8.18.8</version>
+        </dependency>
+        <dependency>
+            <groupId>co.elastic.clients</groupId>
+            <artifactId>elasticsearch-java</artifactId>
+            <version>8.18.8</version>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>jakarta.json</groupId>
+            <artifactId>jakarta.json-api</artifactId>
+            <version>2.0.1</version>
+        </dependency>
+        <dependency>
+            <groupId>org.glassfish</groupId>
+            <artifactId>jakarta.json</artifactId>
+            <version>2.0.1</version>
+        </dependency>
+        <!--攻略api依赖-->
+        <dependency>
+            <groupId>cn.wolfcode.wolf2w</groupId>
+            <artifactId>travel-api-strategy</artifactId>
+            <version>3.6.2</version>
+        </dependency>
+
+    </dependencies>
+
+</project>
